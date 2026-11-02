@@ -26,6 +26,7 @@ const STARTUP_TIMEOUT_MS = 30000;
 // Vulkan cold starts compile shaders and load the full model before the port binds. See #698.
 const VULKAN_STARTUP_TIMEOUT_MS = 120000;
 const HEALTH_CHECK_INTERVAL_MS = 5000;
+const DEFAULT_IDLE_TIMEOUT_MS = 5000;
 const HEALTH_CHECK_TIMEOUT_MS = 2000;
 const PROCESS_EXIT_WAIT_MS = 2000;
 const PROCESS_EXIT_POLL_INTERVAL_MS = 50;
@@ -314,6 +315,18 @@ class WhisperServerManager extends EventEmitter {
     this.gpuSignature = "gpu:cpu";
     this.gpuFallbackActive = false;
     this.lastStartOptions = {};
+    // Zero disables idle unloading; a positive value overrides the five-second default.
+    const idleTimeout = Number(process.env.WHISPER_IDLE_TIMEOUT_MS);
+    this.idleTimeoutMs =
+      process.env.WHISPER_IDLE_TIMEOUT_MS?.trim() &&
+      Number.isSafeInteger(idleTimeout) &&
+      idleTimeout >= 0 &&
+      idleTimeout <= 2147483647
+        ? idleTimeout
+        : DEFAULT_IDLE_TIMEOUT_MS;
+    this.idleTimer = null;
+    this.idleStopPromise = null;
+    this.activeTranscriptions = 0;
     // Output and exit of the last spawned server, read when a GPU server that
     // started fine dies mid-transcription (_fallbackAndRetry). See #1736.
     this._lastProcessInfo = null;
@@ -464,6 +477,7 @@ class WhisperServerManager extends EventEmitter {
   }
 
   async connectRemote(url) {
+    if (this.idleStopPromise) await this.idleStopPromise;
     const parsed = new URL(url);
     const hostname = parsed.hostname;
     const port = parseInt(parsed.port, 10) || (parsed.protocol === "https:" ? 443 : 80);
@@ -513,6 +527,8 @@ class WhisperServerManager extends EventEmitter {
   }
 
   async start(modelPath, options = {}) {
+    if (this.idleStopPromise) await this.idleStopPromise;
+    this.clearIdleTimer();
     if (this.startupPromise) return this.startupPromise;
 
     // Remember the options so a wake re-warm can reload with the same VAD/thread
@@ -536,6 +552,7 @@ class WhisperServerManager extends EventEmitter {
       this.threadSignature === nextThreadSignature &&
       (this.gpuSignature === nextGpuSignature || this.gpuFallbackActive)
     ) {
+      this.resetIdleTimer();
       return;
     }
 
@@ -552,6 +569,7 @@ class WhisperServerManager extends EventEmitter {
       await this.startupPromise;
     } finally {
       this.startupPromise = null;
+      this.resetIdleTimer();
     }
   }
 
@@ -897,7 +915,65 @@ class WhisperServerManager extends EventEmitter {
     }
   }
 
+  setIdleTimeoutSeconds(seconds) {
+    if (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400) return;
+    const timeoutMs = seconds * 1000;
+    if (this.idleTimeoutMs === timeoutMs) return;
+    this.idleTimeoutMs = timeoutMs;
+    this.resetIdleTimer();
+  }
+
+  clearIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  resetIdleTimer() {
+    this.clearIdleTimer();
+    if (
+      !this.idleTimeoutMs ||
+      this.isRemote ||
+      !this.process ||
+      !this.ready ||
+      this.startupPromise ||
+      this.activeTranscriptions ||
+      this.idleStopPromise
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (this.idleTimer !== timer) return;
+      this.idleTimer = null;
+      if (this.isRemote || this.activeTranscriptions || this.startupPromise) return;
+      debugLogger.info("whisper-server idle timeout reached, stopping to free memory", {
+        timeoutMs: this.idleTimeoutMs,
+      });
+      // start() must wait until the old child is fully stopped before replacing it.
+      this.idleStopPromise = this.stop()
+        .catch((error) => {
+          debugLogger.error("Could not unload idle whisper-server", { error: error.message });
+        })
+        .finally(() => {
+          this.idleStopPromise = null;
+        });
+    }, this.idleTimeoutMs);
+    timer.unref();
+    this.idleTimer = timer;
+  }
+
   async transcribe(audioBuffer, options = {}) {
+    // Cover conversion, inference and CPU retries, including concurrent requests.
+    this.activeTranscriptions += 1;
+    this.clearIdleTimer();
+    try {
+      return await this._transcribe(audioBuffer, options);
+    } finally {
+      this.activeTranscriptions -= 1;
+      this.resetIdleTimer();
+    }
+  }
+
+  async _transcribe(audioBuffer, options = {}) {
     if (!this.ready || (!this.process && !this.isRemote)) {
       throw new Error("whisper-server is not running");
     }
@@ -1220,6 +1296,7 @@ class WhisperServerManager extends EventEmitter {
   }
 
   async stop() {
+    this.clearIdleTimer();
     this._stopRequested = true;
     this.gpuFallbackActive = false;
     this.activeGpuBackend = null;

@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "Automatic unloading",
+    "enabledHelp": "Enable to free local Whisper memory after transcription. Changes apply immediately.",
+    "disabledHelp": "Automatic unloading is off: Whisper stays loaded. Your selected delay is kept for reactivation.",
+    "label": "Unload Whisper after inactivity",
+    "never": "Never — keep model loaded",
+    "seconds_one": "{{count}} second",
+    "seconds_other": "{{count}} seconds",
+    "help": "The delay starts after transcription has fully finished. Frees local speech model memory; the next dictation reloads the model and may take longer. Shared by all local Whisper uses."
+  },
   "settings": {
     "language": {
       "sectionTitle": "Language",

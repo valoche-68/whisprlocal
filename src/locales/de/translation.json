@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "Automatisches Entladen",
+    "enabledHelp": "Gibt Whisper-Speicher nach der Transkription frei. Änderungen gelten sofort.",
+    "disabledHelp": "Automatisches Entladen ist deaktiviert: Whisper bleibt geladen. Die gewählte Wartezeit bleibt gespeichert.",
+    "label": "Whisper bei Inaktivität entladen",
+    "never": "Nie — Modell geladen lassen",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "help": "Der Zeitraum beginnt nach Abschluss der Transkription. Gibt den Speicher des lokalen Sprachmodells frei. Das erneute Laden bei der nächsten Aufnahme kann länger dauern. Gilt für alle lokalen Whisper-Funktionen."
+  },
   "settings": {
     "language": {
       "sectionTitle": "Sprache",

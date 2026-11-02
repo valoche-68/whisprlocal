@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "自动卸载",
+    "enabledHelp": "转录完成后释放 Whisper 内存。更改立即生效。",
+    "disabledHelp": "自动卸载已关闭，Whisper 将保持加载。所选等待时间会保留。",
+    "label": "空闲后卸载 Whisper",
+    "never": "从不 — 保持模型加载",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "help": "从转录完全结束后开始计时。释放本地语音模型占用的内存；下次听写会重新加载模型，可能需要更长时间。此设置适用于所有本地 Whisper 功能。"
+  },
   "settings": {
     "language": {
       "sectionTitle": "语言",

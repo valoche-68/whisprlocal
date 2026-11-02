@@ -2112,6 +2112,8 @@ declare global {
           model?: string;
           language?: string;
           keepLocalModelLoaded: boolean;
+          whisperIdleTimeoutSeconds: number;
+          whisperIdleUnloadEnabled: boolean;
           policySettled: boolean;
         }
       ) => Promise<void>;

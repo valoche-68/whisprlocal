@@ -1,4 +1,5 @@
 import { EnterpriseAudioSettings } from "./settings/EnterpriseAudioSettings";
+import WhisperIdleSettings from "./settings/WhisperIdleSettings";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
@@ -4943,17 +4944,23 @@ EOF`,
                   setShowTranscriptionPreview={setShowTranscriptionPreview}
                   toast={toast}
                 />
-                {transcriptionMode === "local" &&
-                  localTranscriptionProvider === "whisper" &&
-                  renderWhisperVadSettings()}
+                {transcriptionMode === "local" && localTranscriptionProvider === "whisper" && (
+                  <>
+                    <WhisperIdleSettings />
+                    {renderWhisperVadSettings()}
+                  </>
+                )}
               </div>
             )}
             renderNoteRecording={() => (
               <div className="space-y-6">
                 <MeetingTranscriptionPanel />
-                {transcriptionMode === "local" &&
-                  localTranscriptionProvider === "whisper" &&
-                  renderWhisperVadSettings()}
+                {transcriptionMode === "local" && localTranscriptionProvider === "whisper" && (
+                  <>
+                    <WhisperIdleSettings />
+                    {renderWhisperVadSettings()}
+                  </>
+                )}
               </div>
             )}
             renderUpload={() => (

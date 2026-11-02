@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "Descarga automática",
+    "enabledHelp": "Libera la memoria de Whisper después de transcribir. Los cambios se aplican inmediatamente.",
+    "disabledHelp": "La descarga automática está desactivada: Whisper permanece cargado. Se conserva el plazo elegido.",
+    "label": "Descargar Whisper tras inactividad",
+    "never": "Nunca — mantener el modelo cargado",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "help": "El plazo empieza cuando termina la transcripción. Libera la memoria del modelo de voz local. La siguiente transcripción recarga el modelo y puede tardar más. Se aplica a todos los usos locales de Whisper."
+  },
   "settings": {
     "language": {
       "sectionTitle": "Idioma",

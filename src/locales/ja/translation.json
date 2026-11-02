@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "自動解放",
+    "enabledHelp": "文字起こし後にWhisperのメモリを解放します。変更はすぐに適用されます。",
+    "disabledHelp": "自動解放はオフです。Whisperは読み込まれたままになります。選択した待機時間は保持されます。",
+    "label": "待機中にWhisperを解放",
+    "never": "解放しない — モデルを保持",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "help": "文字起こしの完了後に待機時間の計測を開始します。ローカル音声モデルのメモリを解放します。次の音声入力ではモデルを再読み込みするため、時間がかかる場合があります。すべてのローカルWhisper機能に適用されます。"
+  },
   "settings": {
     "language": {
       "sectionTitle": "言語",

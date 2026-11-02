@@ -1,4 +1,18 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "إلغاء التحميل التلقائي",
+    "enabledHelp": "تحرير ذاكرة Whisper بعد التفريغ النصي. تطبق التغييرات فورًا.",
+    "disabledHelp": "إلغاء التحميل التلقائي معطل: يظل Whisper محملًا. يتم الاحتفاظ بمدة الانتظار المحددة.",
+    "label": "إلغاء تحميل Whisper بعد الخمول",
+    "never": "أبدًا — إبقاء النموذج محمّلًا",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "seconds_zero": "{{count}} s",
+    "seconds_two": "{{count}} s",
+    "seconds_few": "{{count}} s",
+    "seconds_many": "{{count}} s",
+    "help": "يبدأ العد بعد اكتمال التفريغ النصي. يحرر ذاكرة نموذج الصوت المحلي؛ يعاد تحميل النموذج عند الإملاء التالي وقد يستغرق وقتًا أطول. ينطبق على جميع استخدامات Whisper المحلية."
+  },
   "hooks": {
     "audioRecording": {
       "cleanupSignedOut": "يستخدم تنظيف الذكاء الاصطناعي OpenWhispr Cloud، لكنك لم تسجّل الدخول.",

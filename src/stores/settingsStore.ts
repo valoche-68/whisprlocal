@@ -402,6 +402,7 @@ const BOOLEAN_SETTINGS = new Set([
   "toneStyleEnabled",
   "useDictationAgent",
   "keepLocalModelLoaded",
+  "whisperIdleUnloadEnabled",
   "voiceAgentScreenContext",
   "useDictationAgentVisionModel",
   "useDictationTranslation",
@@ -452,6 +453,7 @@ const ARRAY_SETTINGS = new Set([
 ]);
 
 const NUMERIC_SETTINGS = new Set([
+  "whisperIdleTimeoutSeconds",
   "micWarmHoldSeconds",
   "audioRetentionDays",
   "transcriptRetentionDays",
@@ -1068,6 +1070,8 @@ export interface SettingsState
   cleanupMode: InferenceMode;
   cleanupRemoteUrl: string;
   keepLocalModelLoaded: boolean;
+  whisperIdleTimeoutSeconds: number;
+  whisperIdleUnloadEnabled: boolean;
 
   meetingTranscriptionMode: InferenceMode;
   meetingUseLocalWhisper: boolean;
@@ -1186,6 +1190,8 @@ export interface SettingsState
   setCleanupMode: (mode: InferenceMode) => void;
   setCleanupRemoteUrl: (url: string) => void;
   setKeepLocalModelLoaded: (value: boolean) => void;
+  setWhisperIdleTimeoutSeconds: (value: number) => void;
+  setWhisperIdleUnloadEnabled: (value: boolean) => void;
 
   setMeetingTranscriptionMode: (mode: InferenceMode) => void;
   setMeetingUseLocalWhisper: (value: boolean) => void;
@@ -1881,6 +1887,16 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   })(),
   cleanupRemoteUrl: readString("cleanupRemoteUrl", ""),
   keepLocalModelLoaded: readBoolean("keepLocalModelLoaded", false),
+  // Preserve the old "Never" choice when upgrading the experimental setting.
+  whisperIdleUnloadEnabled: readBoolean(
+    "whisperIdleUnloadEnabled",
+    readNumber("whisperIdleTimeoutSeconds", 5) !== 0
+  ),
+  whisperIdleTimeoutSeconds: [5, 10, 30, 60, 300].includes(
+    readNumber("whisperIdleTimeoutSeconds", 5)
+  )
+    ? readNumber("whisperIdleTimeoutSeconds", 5)
+    : 5,
 
   meetingTranscriptionMode: (() => {
     const v = readString("meetingTranscriptionMode", "openwhispr");
@@ -1978,6 +1994,14 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   setCleanupMode: createStringSetter("cleanupMode") as (mode: InferenceMode) => void,
   setCleanupRemoteUrl: createStringSetter("cleanupRemoteUrl"),
   setKeepLocalModelLoaded: createBooleanSetter("keepLocalModelLoaded"),
+  setWhisperIdleUnloadEnabled: createBooleanSetter("whisperIdleUnloadEnabled"),
+  setWhisperIdleTimeoutSeconds: (value: number) => {
+    if ([5, 10, 30, 60, 300].includes(value)) {
+      // Persist the legacy "Never" migration before replacing its zero duration.
+      createBooleanSetter("whisperIdleUnloadEnabled")(get().whisperIdleUnloadEnabled);
+      createNumberSetter("whisperIdleTimeoutSeconds")(value);
+    }
+  },
 
   setMeetingTranscriptionMode: createStringSetter("meetingTranscriptionMode") as (
     mode: InferenceMode
@@ -4013,6 +4037,8 @@ export async function initializeSettings(): Promise<void> {
       if (Number.isNaN(parsed)) {
         value =
           key === "audioRetentionDays" ? 30 : (state as unknown as Record<string, unknown>)[key];
+      } else if (key === "whisperIdleTimeoutSeconds") {
+        value = [5, 10, 30, 60, 300].includes(parsed) ? parsed : 5;
       } else if (key === "audioRetentionDays") {
         value = Math.round(parsed);
       } else if (key === "micWarmHoldSeconds") {

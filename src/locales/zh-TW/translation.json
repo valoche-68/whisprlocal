@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "自動卸載",
+    "enabledHelp": "轉錄完成後釋放 Whisper 記憶體。變更立即生效。",
+    "disabledHelp": "自動卸載已關閉，Whisper 將保持載入。所選等待時間會保留。",
+    "label": "閒置後卸載 Whisper",
+    "never": "永不 — 保持模型載入",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "help": "從轉錄完全結束後開始計時。釋放本機語音模型佔用的記憶體；下次聽寫會重新載入模型，可能需要較長時間。此設定適用於所有本機 Whisper 功能。"
+  },
   "settings": {
     "language": {
       "sectionTitle": "語言",

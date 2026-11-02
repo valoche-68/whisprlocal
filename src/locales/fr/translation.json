@@ -1,4 +1,14 @@
 {
+  "whisperIdle": {
+    "enabledLabel": "Déchargement automatique",
+    "enabledHelp": "Libérer la mémoire de Whisper après la transcription. Les changements s’appliquent immédiatement.",
+    "disabledHelp": "Le déchargement automatique est désactivé : Whisper reste chargé. Le délai choisi est conservé pour la réactivation.",
+    "label": "Décharger Whisper après inactivité",
+    "never": "Jamais — garder le modèle chargé",
+    "seconds_one": "{{count}} seconde",
+    "seconds_other": "{{count}} secondes",
+    "help": "Le délai commence après la fin complète de la transcription. Libère la mémoire du modèle vocal local ; la dictée suivante recharge le modèle et peut démarrer plus lentement. Ce réglage est partagé par les usages locaux de Whisper."
+  },
   "settings": {
     "language": {
       "sectionTitle": "Langue",

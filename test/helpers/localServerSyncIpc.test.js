@@ -89,7 +89,19 @@ test.before(() => {
   delete require.cache[handlersModulePath];
   const IPCHandlers = require(handlersModulePath);
   const Ctor = IPCHandlers.default || IPCHandlers;
-  target = { signedIn: false, envKeys: [] };
+  target = {
+    signedIn: false,
+    envKeys: [],
+    whisperManager: {
+      stopServer: async () => {},
+      serverManager: {
+        idleTimeoutSeconds: null,
+        setIdleTimeoutSeconds(seconds) {
+          this.idleTimeoutSeconds = seconds;
+        },
+      },
+    },
+  };
   target._syncStartupEnv = (setVars, clearVars) => {
     target.envKeys = [...Object.keys(setVars), ...clearVars];
   };
@@ -160,4 +172,13 @@ test("Keep model loaded applies before the workspace policy settles", async () =
 
   await sync({ loaded: MODEL, signedIn: true, policySettled: false });
   assert.equal(modelManager.serverManager.keepResident, false, "missing means off");
+});
+
+test("Whisper idle sync applies delay changes and disabling without restarting the app", async () => {
+  await sync({ whisperIdleUnloadEnabled: true, whisperIdleTimeoutSeconds: 30 });
+  assert.equal(target.whisperManager.serverManager.idleTimeoutSeconds, 30);
+  await sync({ whisperIdleUnloadEnabled: false, whisperIdleTimeoutSeconds: 30 });
+  assert.equal(target.whisperManager.serverManager.idleTimeoutSeconds, 0);
+  await sync({ whisperIdleUnloadEnabled: true, whisperIdleTimeoutSeconds: 30 });
+  assert.equal(target.whisperManager.serverManager.idleTimeoutSeconds, 30);
 });

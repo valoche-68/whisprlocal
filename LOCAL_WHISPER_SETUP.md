@@ -109,3 +109,31 @@ and context growth still release/restart the server normally. This option
 leaves the Local inference timeout, context sizing and cleanup controls
 unchanged. It also applies when other local-language-model features share the
 same server. Turn it off to restore the five-minute idle unload.
+
+## Local Whisper idle unloading (experimental)
+
+The local Whisper server stops after **five seconds after transcription finishes**,
+releasing its RAM/VRAM. The next dictation starts the selected model again using
+the existing backend, language and VAD configuration. That first dictation may
+take longer while the model loads. Models on disk are kept.
+
+Under **Speech to Text → Dictation**, select local Whisper to show **Automatic
+unloading**. Switch it on and choose 5, 10, 30, 60 or 300 seconds. Switch it off to
+keep Whisper loaded between dictations; the selected delay is remembered when you
+turn it on again. The switch and delay are saved, synchronized between windows
+and applied immediately, without restarting the application. If the model was
+already unloaded, the next dictation reloads it normally.
+
+This setting is shared by local Whisper uses and is independent of the language
+model's **Keep model loaded** option. Installing this modified application requires
+one full application restart; subsequent preference changes do not.
+
+The countdown starts when the server finishes loading and resets after the last
+active transcription completes, fails or is cancelled. Audio conversion and
+concurrent transcription requests prevent idle shutdown. A request arriving while
+the server is stopping waits before starting a replacement. Remote servers are
+unaffected. Changing unrelated settings does not reset the countdown.
+
+`WHISPER_IDLE_TIMEOUT_MS` can override the initial default for standalone backend
+tests (0 disables cleanup); the application's saved UI preference takes precedence
+once settings synchronize. No new installation is included in this source patch.

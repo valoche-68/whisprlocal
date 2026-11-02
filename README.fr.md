@@ -6,8 +6,6 @@
 
 > Projet indépendant, **sans affiliation avec OpenWhispr, Gizmo Labs ou OpenAI**, sans approbation ni exploitation par ces organisations. Whisper est un modèle initialement publié par OpenAI ; son utilisation ne crée aucune affiliation.
 
-![Premier démarrage officiel conservé, interface française](docs/screenshots/onboarding-fr.png)
-
 Version du projet : **0.1.0**. Base officielle : **OpenWhispr 1.11.0**, suivie séparément dans [`upstream.json`](upstream.json).
 
 ## La même interface, centrée sur le local

@@ -6,8 +6,6 @@
 
 > WhisprLocal is an independent derivative. It is **not affiliated with, endorsed by, or operated by OpenWhispr, Gizmo Labs, or OpenAI**. Whisper is a model originally released by OpenAI; using it does not imply any affiliation.
 
-![Official onboarding style retained, French interface](docs/screenshots/onboarding-fr.png)
-
 Initial project version: **0.1.0**. Upstream base: **OpenWhispr 1.11.0**. These versions are tracked independently in [`upstream.json`](upstream.json).
 
 ## What stays familiar

@@ -331,3 +331,5 @@ src/assets/fonts/yowza/*.otf
 
 /dist-test/
 /dist-release/
+
+dist-model-fix/

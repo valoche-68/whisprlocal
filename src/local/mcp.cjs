@@ -59,15 +59,18 @@ async function serve(input = process.stdin, output = process.stdout) {
       continue;
     }
     try {
-      const result = await dispatch(message, bridge);
+      // The desktop rotates its bridge token on restart and after updates.
+      // Resolve the current descriptor for each tool call, keeping this stdio
+      // session usable when the application returns.
+      const result = await dispatch(message);
       if (result !== undefined)
         output.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }) + "\n");
     } catch (e) {
-      if (message.id !== undefined)
+      if (e.rpcCode === -32600 || message?.id !== undefined)
         output.write(
           JSON.stringify({
             jsonrpc: "2.0",
-            id: message.id,
+            id: message?.id ?? null,
             error: { code: e.rpcCode || -32603, message: e.message },
           }) + "\n"
         );

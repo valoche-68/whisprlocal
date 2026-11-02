@@ -5,16 +5,25 @@ const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 const { spawn } = require("node:child_process");
+const { PassThrough } = require("node:stream");
 const { readBridge, invoke } = require("../../src/local/bridgeClient.cjs");
-const { dispatch } = require("../../src/local/mcp.cjs");
+const { dispatch, serve } = require("../../src/local/mcp.cjs");
 const { isAllowed, setConfigured } = require("../../src/local/networkPolicy.cjs");
 test("network policy refuses official and unconfigured services, preserves downloads and explicit servers", () => {
-  setConfigured(["https://speech.example.org/v1", "https://api.openwhispr.com"]);
+  setConfigured([
+    "https://speech.example.org/v1",
+    "https://api.openwhispr.com",
+    "https://api.openwhispr.com.",
+    "https://openwhisper.com.",
+  ]);
   for (const u of [
     "https://api.openwhispr.com/a",
     "https://auth.openwhispr.com",
     "https://mcp.openwhispr.com",
     "https://openwhisper.com",
+    "https://api.openwhispr.com./v1",
+    "wss://api.openwhispr.com./v1",
+    "https://openwhisper.com./v1",
     "https://google.com",
     "https://speech.example.org.evil.com",
   ])
@@ -86,6 +95,49 @@ test("CLI and MCP use authenticated loopback requests and validate operations", 
   cli.stdout.on("data", (s) => (out += s));
   assert.equal(await new Promise((r) => cli.on("close", r)), 0);
   assert.match(out, /Bonjour/);
+  const previousDescriptor = process.env.WHISPRLOCAL_BRIDGE;
+  process.env.WHISPRLOCAL_BRIDGE = file;
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const session = serve(input, output);
+  const sendMessage = async (message) => {
+    const response = new Promise((resolve) =>
+      output.once("data", (data) => resolve(JSON.parse(data)))
+    );
+    input.write(JSON.stringify(message) + "\n");
+    return response;
+  };
+  const call = (id) =>
+    sendMessage({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "health" } });
+  try {
+    assert.equal((await call(10)).result.isError, false);
+    assert.equal(seen.at(-1).auth, `Bearer ${token}`);
+    const rotatedToken = "b".repeat(64);
+    fs.writeFileSync(file, JSON.stringify({ version: 1, port, token: rotatedToken }), {
+      mode: 0o600,
+    });
+    assert.equal((await call(11)).result.isError, false);
+    assert.equal(
+      seen.at(-1).auth,
+      `Bearer ${rotatedToken}`,
+      "live MCP session re-reads rotated desktop token"
+    );
+    for (const invalid of [null, 42, true, "invalid", {}]) {
+      const response = await sendMessage(invalid);
+      assert.equal(response.id, null);
+      assert.equal(response.error.code, -32600);
+    }
+    assert.equal(
+      (await call(12)).result.isError,
+      false,
+      "invalid input does not terminate the stdio session"
+    );
+  } finally {
+    input.end();
+    await session;
+    if (previousDescriptor === undefined) delete process.env.WHISPRLOCAL_BRIDGE;
+    else process.env.WHISPRLOCAL_BRIDGE = previousDescriptor;
+  }
   fs.chmodSync(file, 0o644);
   assert.throws(() => readBridge(file), /private/);
   fs.chmodSync(file, 0o600);

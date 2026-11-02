@@ -44,7 +44,20 @@ function prepareMigration(repo, tag) {
       );
     const vendor = git(["rev-parse", "HEAD"], temp).stdout.trim();
     git(["switch", "-c", branch]);
-    const merge = git(["merge", "--no-ff", "--no-commit", vendor], repo, true);
+    const merge = git(
+      [
+        "-c",
+        "user.name=WhisprLocal upstream monitor",
+        "-c",
+        "user.email=upstream-monitor@users.noreply.github.com",
+        "merge",
+        "--no-ff",
+        "--no-commit",
+        vendor,
+      ],
+      repo,
+      true
+    );
     let conflicts = [];
     if (merge.status) {
       conflicts = git(["diff", "--name-only", "--diff-filter=U"])

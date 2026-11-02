@@ -36,3 +36,14 @@ test("busy transcription or download refuses deletion without removing the file"
   await fs.access(model);
   assert.equal(manager.stopped, undefined);
 });
+
+test("bulk deletion refuses a busy engine and closes an idle engine before removing files", async (t) => {
+  const { manager, model } = await fixture(t);
+  manager.getModelsDir = () => path.dirname(model);
+  manager.serverManager.activeTranscriptions = 1;
+  assert.equal((await manager.deleteAllWhisperModels()).success, false);
+  await fs.access(model);
+  manager.serverManager.activeTranscriptions = 0;
+  assert.equal((await manager.deleteAllWhisperModels()).deleted_count, 1);
+  assert.equal(manager.stopped, true);
+});

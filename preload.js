@@ -4,7 +4,33 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 // preloads can't require local modules, so the {base, get, save} tuples are
 // inlined here; keep them in sync with the BYOK_API_KEYS manifest in
 // src/config/secretKeys.js (the main process derives its plumbing from that).
-const BYOK_KEY_BRIDGES = [];
+const BYOK_KEY_BRIDGES = [
+  {
+    base: "note-formatting-custom",
+    get: "getNoteFormattingCustomKey",
+    save: "saveNoteFormattingCustomKey",
+  },
+  {
+    base: "translation-custom",
+    get: "getTranslationCustomKey",
+    save: "saveTranslationCustomKey",
+  },
+  {
+    base: "dictation-agent-custom",
+    get: "getDictationAgentCustomKey",
+    save: "saveDictationAgentCustomKey",
+  },
+  {
+    base: "dictation-agent-vision-custom",
+    get: "getDictationAgentVisionCustomKey",
+    save: "saveDictationAgentVisionCustomKey",
+  },
+  {
+    base: "chat-agent-custom",
+    get: "getChatAgentCustomKey",
+    save: "saveChatAgentCustomKey",
+  },
+];
 const secretKeyApi = {};
 for (const k of BYOK_KEY_BRIDGES) {
   secretKeyApi[k.get] = () => ipcRenderer.invoke(`get-${k.base}-key`);

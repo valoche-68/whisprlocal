@@ -2143,6 +2143,12 @@ export default function SettingsPage({
 
   const renderSectionContent = () => {
     switch (activeSection) {
+      case "toneStyle":
+        return (
+          <ToneStyleSection
+            onOpenCleanupSettings={() => onNavigateToSection?.("llms", "dictationCleanup")}
+          />
+        );
       case "general":
         return (
           <div className="space-y-6">

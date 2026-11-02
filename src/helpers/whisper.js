@@ -891,6 +891,21 @@ class WhisperManager {
         return { success: true, deleted_count: 0, freed_bytes: 0, freed_mb: 0 };
       }
 
+      if (this.currentDownloadProcess)
+        return { success: false, error: "Cancel the model download before deleting models" };
+      if (
+        !this.serverManager.isRemote &&
+        this.serverManager.modelPath &&
+        path.dirname(this.serverManager.modelPath) === modelsDir
+      ) {
+        if (this.serverManager.activeTranscriptions || this.serverManager.startupPromise)
+          return {
+            success: false,
+            error: "Wait for the active transcription to finish before deleting models",
+          };
+        await this.stopServer();
+      }
+
       const files = await fsPromises.readdir(modelsDir);
       for (const file of files) {
         if (file.endsWith(".bin")) {

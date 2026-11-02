@@ -21,7 +21,9 @@ TypeScript and renderer compilation pass. The regression run passes 589 selected
 
 ## Update recovery follow-up
 
-A crash or reset after preparing a managed archive can leave its version directory on disk while losing the in-memory staged-update state. Downloading that version again then reports **Version already staged**. Recovery should persist verified staging metadata or rebuild the staged version safely without trusting or deleting the current/previous installation. The retry now extracts the freshly verified archive into a new versioned directory when the canonical version directory already exists. It never trusts or overwrites that older directory, which may be the running or rollback installation. A focused Electron-hosted regression passes. This follow-up is committed for the next build; it is not yet deployed in the installed app. Old staged directories remain available rather than being deleted automatically.
+A crash or reset after preparing a managed archive could leave its version directory on disk while losing the in-memory staged-update state. Downloading that version again reported **Version already staged**. The retry now extracts the freshly verified archive into a new versioned directory when the canonical version directory already exists. It never trusts or overwrites that older directory, which may be the running or rollback installation. A focused Electron-hosted regression passes. This follow-up is now deployed and verified in the managed user installation. Old staged directories remain available rather than being deleted automatically.
+
+The deployed archive was compared against the preceding installation: the recovery module matches the reviewed source, other packed files and unpacked flags are preserved, and native SQLite/CLI/packaged staging-helper checks pass. The previous installation remains available for rollback. The unpacked installer's desktop entry now uses the valid `AudioVideo;Audio;` categories; `desktop-file-validate` passes.
 
 The first public AppImage update cycle and administrator Debian installation still need delivery-path smoke tests after human approval. No public release or upstream merge is approved by this review.
 
@@ -29,4 +31,4 @@ The first public AppImage update cycle and administrator Debian installation sti
 
 La revue a corrigé la page vide « Ton et style », les jetons auto-hébergés par usage, la reconnexion MCP, les messages MCP invalides, le contrôle des domaines officiels, la préparation Git des migrations amont, le choix du mécanisme de mise à jour, la migration des dossiers et la suppression globale de Whisper.
 
-Le comportement de suppression des modèles lors de la désinstallation est conservé conformément à la demande de l'utilisateur. Le correctif de reprise après arrêt brutal est préparé et testé pour la prochaine compilation. La revue et les tests ne constituent pas une garantie d'absence de défaut dans l'ensemble du code hérité.
+Le comportement de suppression des modèles lors de la désinstallation est conservé conformément à la demande de l'utilisateur. Le correctif de reprise après arrêt brutal est installé et testé. La revue et les tests ne constituent pas une garantie d'absence de défaut dans l'ensemble du code hérité.

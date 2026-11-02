@@ -233,7 +233,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   );
   const skipSetupChoiceForEnterprise = shouldSkipOnboardingSetupChoice({
     isSignedIn,
-    authPath: session.authPath,
+    authPath: "guest",
     setupMode: session.setupMode,
     activeWorkspace: enterpriseWorkspace,
   });
@@ -315,7 +315,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const route = useMemo(
     () =>
       getOnboardingRoute({
-        authPath: session.authPath,
+        authPath: "guest",
         setupMode: session.setupMode,
         agentAllowed,
         requiredModelsPending,
@@ -658,7 +658,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           clearPendingLocalModels();
         }
 
-        const skippedAuth = session.authPath === "guest";
+        const skippedAuth = true;
         localStorage.setItem("authenticationSkipped", String(skippedAuth));
         localStorage.setItem("skipAuth", String(skippedAuth));
         clearSession();
@@ -749,7 +749,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         return;
       }
       const nextRoute = getOnboardingRoute({
-        authPath: session.authPath,
+        authPath: "guest",
         setupMode: mode,
         agentAllowed,
         requiredModelsPending,

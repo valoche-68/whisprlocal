@@ -1777,9 +1777,9 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     if (v === "light" || v === "dark" || v === "auto") return v;
     return "auto" as const;
   })(),
-  cloudBackupEnabled: readBoolean("cloudBackupEnabled", false),
-  insightsSyncEnabled: readBoolean("insightsSyncEnabled", false),
-  telemetryEnabled: readBoolean("telemetryEnabled", false),
+  cloudBackupEnabled: false,
+  insightsSyncEnabled: false,
+  telemetryEnabled: false,
   audioRetentionDays: readNumber("audioRetentionDays", 30),
   transcriptRetentionDays: readNumber("transcriptRetentionDays", 0),
   dataRetentionEnabled: readBoolean("dataRetentionEnabled", true),
@@ -2601,9 +2601,9 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     set({ theme: value });
   },
 
-  setCloudBackupEnabled: createBooleanSetter("cloudBackupEnabled"),
-  setInsightsSyncEnabled: createBooleanSetter("insightsSyncEnabled"),
-  setTelemetryEnabled: createBooleanSetter("telemetryEnabled"),
+  setCloudBackupEnabled: () => {},
+  setInsightsSyncEnabled: () => {},
+  setTelemetryEnabled: () => {},
   setMicWarmHoldSeconds: (value: number) => {
     const snapped = snapMicWarmHold(value);
     if (isBrowser) localStorage.setItem("micWarmHoldSeconds", String(snapped));
@@ -3886,57 +3886,6 @@ export async function initializeSettings(): Promise<void> {
       );
     }
 
-    // The main-process DB is the source of truth for the Apple Calendar connection
-    try {
-      const status = await window.electronAPI.acalGetConnectionStatus?.();
-      if (status) {
-        useSettingsStore.getState().setAppleCalendarConnected(status.connected);
-      }
-    } catch (err) {
-      logger.warn(
-        "Failed to hydrate Apple Calendar connection status",
-        { error: (err as Error).message },
-        "settings"
-      );
-    }
-
-    // Picks up tenant ids stored after the accounts were first saved here; an
-    // empty answer (including a failed read) leaves the saved list alone.
-    try {
-      const status = await window.electronAPI.mcalGetConnectionStatus?.();
-      if (status?.accounts.length) {
-        useSettingsStore.getState().setMcalAccounts(status.accounts);
-      }
-    } catch (err) {
-      logger.warn(
-        "Failed to hydrate Microsoft Calendar accounts",
-        { error: (err as Error).message },
-        "settings"
-      );
-    }
-
-    try {
-      const currentState = useSettingsStore.getState();
-      await window.electronAPI.gcalSetPrimaryOnly?.(currentState.gcalPrimaryOnly);
-    } catch (err) {
-      logger.warn(
-        "Failed to sync gcal primary-only on startup",
-        { error: (err as Error).message },
-        "settings"
-      );
-    }
-
-    try {
-      const currentState = useSettingsStore.getState();
-      await window.electronAPI.mcalSetPrimaryOnly?.(currentState.mcalPrimaryOnly);
-    } catch (err) {
-      logger.warn(
-        "Failed to sync mcal primary-only on startup",
-        { error: (err as Error).message },
-        "settings"
-      );
-    }
-
     try {
       const currentState = useSettingsStore.getState();
       await window.electronAPI.setSpeakerDiarizationEnabled?.(
@@ -4094,4 +4043,25 @@ export async function initializeSettings(): Promise<void> {
       useSettingsStore.setState({ [data.key]: data.value });
     }
   });
+}
+
+// The main process uses this list to allow configured self-hosted origins only.
+if (typeof window !== "undefined") {
+  const publish = () => {
+    const state = useSettingsStore.getState();
+    const urls = Object.entries(state)
+      .filter(
+        ([k, v]) =>
+          /(?:RemoteUrl|remoteTranscriptionUrl|remote.*Url|CustomBaseUrl)$/i.test(k) &&
+          typeof v === "string"
+      )
+      .map(([, v]) => v as string);
+    void (
+      window.electronAPI as unknown as { configureLocalEndpoints?: (u: string[]) => Promise<void> }
+    )
+      ?.configureLocalEndpoints?.(urls)
+      .catch(() => {});
+  };
+  publish();
+  useSettingsStore.subscribe(publish);
 }

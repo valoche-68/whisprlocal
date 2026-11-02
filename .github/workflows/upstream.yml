@@ -1,0 +1,112 @@
+name: Review new OpenWhispr releases
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: upstream-migration
+  cancel-in-progress: false
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/OpenWhispr/openwhispr/releases/latest > "$RUNNER_TEMP/release.json"
+          node - <<'JS'
+          const fs=require('fs');const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/release.json'));const old=require('./upstream.json');
+          if(r.draft||r.prerelease||!/^v\d+\.\d+\.\d+$/.test(r.tag_name))process.exit(0);
+          const newer=(a,b)=>{const x=a.replace(/^v/,'').split('.').map(Number),y=b.replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if(x[i]!==y[i])return x[i]>y[i]}return false};
+          if(newer(r.tag_name,old.version))fs.appendFileSync(process.env.GITHUB_OUTPUT,`tag=${r.tag_name}\n`);
+          JS
+  prepare:
+    needs: discover
+    if: needs.discover.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      branch: ${{ steps.merge.outputs.branch }}
+      conflicted: ${{ steps.merge.outputs.conflicted }}
+      pr: ${{ steps.pr.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: existing
+        env:
+          TAG: ${{ needs.discover.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/upstream/$TAG" >/dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          fi
+      - id: merge
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          TAG: ${{ needs.discover.outputs.tag }}
+        run: |
+          cp scripts/whisprlocal/prepare-upstream.cjs "$RUNNER_TEMP/prepare-upstream.cjs"
+          git fetch https://github.com/OpenWhispr/openwhispr.git "refs/tags/$TAG:refs/tags/$TAG"
+          node "$RUNNER_TEMP/prepare-upstream.cjs" "$TAG"
+          git push origin "HEAD:refs/heads/upstream/$TAG"
+      - id: pr
+        if: steps.merge.outputs.branch != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.discover.outputs.tag }}
+          CONFLICTED: ${{ steps.merge.outputs.conflicted }}
+        run: |
+          if [ "$CONFLICTED" = true ]; then
+            printf 'Migration blocked by conflicts. See the report in this branch. No code was resolved automatically. Human review is required; publication is blocked.\n' > "$RUNNER_TEMP/pr-body.md"
+          else
+            printf 'Imports OpenWhispr %s while retaining the independent local edition. Automated checks run without publication credentials. Review the UI, offline behavior, GPU lifecycle, network policy and release artifacts before merging. No automatic merge or publication.\n' "$TAG" > "$RUNNER_TEMP/pr-body.md"
+          fi
+          url=$(gh pr create --base main --head "upstream/$TAG" --draft --title "Review OpenWhispr $TAG migration" --body-file "$RUNNER_TEMP/pr-body.md")
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
+  test-import:
+    needs: prepare
+    if: needs.prepare.outputs.branch != '' && needs.prepare.outputs.conflicted == 'false'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # No publication credentials or write token are exposed to imported code.
+      - run: npm ci --ignore-scripts && npm rebuild better-sqlite3 --runtime=node
+      - run: npm run typecheck && npm run build:renderer
+      - run: node scripts/whisprlocal/checks.cjs && npm run test:local
+  ready-for-review:
+    needs: [prepare, test-import]
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.prepare.outputs.pr }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ needs.prepare.outputs.branch }}
+        run: |
+          sha=$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)
+          gh api --method POST "repos/$GH_REPO/statuses/$sha" -f state=success -f context=checks -f description='Imported code passed the local edition checks without publication credentials'
+          gh pr ready "$PR"

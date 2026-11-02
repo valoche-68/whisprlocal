@@ -1,211 +1,58 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus } from "./icons";
-import { Button } from "./ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { useSettingsStore } from "../stores/settingsStore";
-import { ensureConnectorStatus, useConnectorStatusStore } from "../stores/connectorStatusStore";
-import { useConnectorAccess } from "../hooks/useConnectorAccess";
-import ApiKeysSection from "./ApiKeysSection";
-import { ConnectorsSection } from "./ConnectorsSection";
-import { BetaBadge } from "./connectors/BetaBadge";
-import { CONNECTOR_ROWS } from "./connectors/connectorRows";
 import { IntegrationsNav } from "./integrations/IntegrationsNav";
-import { IntegrationsPane, UpsellBar } from "./integrations/IntegrationsPane";
-import { CalendarsPane } from "./integrations/CalendarsPane";
+import { IntegrationsPane } from "./integrations/IntegrationsPane";
 import { SkillsPane } from "./integrations/SkillsPane";
-import { McpPane } from "./integrations/McpPane";
-import { CliPane } from "./integrations/CliPane";
-import type { SkillChatStart, SkillOpenRequest } from "../types/skills";
+import { CopyableCommand } from "./ui/CopyableCommand";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import {
-  INTEGRATIONS_SECTION_ICONS,
   INTEGRATIONS_SECTIONS,
-  sectionMeta,
   type IntegrationsSection,
-  type SectionMeta,
 } from "./integrations/integrationsSections";
-
-const API_DOCS_URL = "https://docs.openwhispr.com/api/overview";
-const { mcp: McpIcon, cli: CliIcon } = INTEGRATIONS_SECTION_ICONS;
-
-interface IntegrationsViewProps {
+import type { SkillChatStart, SkillOpenRequest } from "../types/skills";
+interface Props {
   isPaid: boolean;
   onUpgrade: () => void;
   section: IntegrationsSection;
-  onSectionChange: (section: IntegrationsSection) => void;
-  /** Absent where the assistant isn't allowed: the Skills page then offers no chat. */
-  onStartSkillChat?: (start: SkillChatStart) => void;
+  onSectionChange: (s: IntegrationsSection) => void;
+  onStartSkillChat?: (s: SkillChatStart) => void;
   openSkillRequest?: SkillOpenRequest | null;
   onOpenSkillRequestHandled?: () => void;
 }
-
-export default function IntegrationsView({
-  isPaid,
-  onUpgrade,
-  section,
-  onSectionChange,
-  onStartSkillChat,
-  openSkillRequest,
-  onOpenSkillRequestHandled,
-}: IntegrationsViewProps): ReactElement {
+function CopyBlock({ value }: { value: string }) {
+  return <CopyableCommand command={value} />;
+}
+export default function IntegrationsView(props: Props): ReactElement {
   const { t } = useTranslation();
-  const isMac = window.electronAPI?.getPlatform?.() === "darwin";
-  const connectorAccess = useConnectorAccess();
-  const readyConnectors = useConnectorStatusStore(
-    (state) =>
-      CONNECTOR_ROWS.filter((row) => {
-        const status = state.statuses[row.id];
-        return status?.connected && !status.needsReconnect;
-      }).length
-  );
-  const connectedCalendars = useSettingsStore(
-    (state) =>
-      [
-        state.gcalAccounts.length > 0,
-        state.mcalAccounts.length > 0,
-        isMac && state.appleCalendarConnected,
-      ].filter(Boolean).length
-  );
-  // A section stays mounted once opened, so a connect or dialog in it survives
-  // a visit to another section. Calendars always mounts: its connection
-  // listeners keep the nav's count fresh, as when Integrations was one page.
-  const [mounted, setMounted] = useState<ReadonlySet<IntegrationsSection>>(
-    () => new Set<IntegrationsSection>(["calendars", section])
-  );
-  if (!mounted.has(section)) setMounted(new Set(mounted).add(section));
-  const [createKeyRequest, setCreateKeyRequest] = useState(0);
-  const [canCreateKey, setCanCreateKey] = useState(false);
-  const scroller = useRef<HTMLDivElement>(null);
-  const paneElements = useRef<Partial<Record<IntegrationsSection, HTMLDivElement | null>>>({});
-  const focusOpenedSection = useRef(false);
-
-  // The nav counts connected logins on every section, not only once Connectors has mounted.
+  const section = INTEGRATIONS_SECTIONS.includes(props.section) ? props.section : "cli";
+  const [command, setCommand] = useState("whisprlocal");
   useEffect(() => {
-    void ensureConnectorStatus();
+    void (
+      window.electronAPI as unknown as {
+        getLocalIntegrationInfo?: () => Promise<{ command: string }>;
+      }
+    )
+      ?.getLocalIntegrationInfo?.()
+      .then((info) => setCommand(info.command));
   }, []);
-
-  useEffect(() => {
-    if (scroller.current) scroller.current.scrollTop = 0;
-    if (!focusOpenedSection.current) return;
-    focusOpenedSection.current = false;
-    paneElements.current[section]?.querySelector("h2")?.focus();
-  }, [section]);
-
-  // A link inside a section is hidden along with it, so focus moves to the
-  // opened section's heading instead of dropping to the page.
-  const openSection = (next: IntegrationsSection): void => {
-    focusOpenedSection.current = true;
-    onSectionChange(next);
-  };
-
-  const meta = Object.fromEntries(
-    INTEGRATIONS_SECTIONS.map((id) => [
-      id,
-      sectionMeta(id, {
-        isPaid,
-        connectors: { ...connectorAccess, ready: readyConnectors },
-        connectedCalendars,
-      }),
-    ])
-  ) as Record<IntegrationsSection, SectionMeta | null>;
-  const titleOf = (id: IntegrationsSection): string => t(`integrations.nav.sections.${id}`);
-
-  const panes: Record<IntegrationsSection, ReactNode> = {
-    connectors: (
-      <IntegrationsPane
-        title={titleOf("connectors")}
-        titleBadge={<BetaBadge />}
-        description={t("integrations.connectors.description")}
-      >
-        <ConnectorsSection onUpgrade={onUpgrade} />
-      </IntegrationsPane>
-    ),
-    skills: (
-      <SkillsPane
-        title={titleOf("skills")}
-        active={section === "skills"}
-        onStartSkillChat={onStartSkillChat}
-        openSkillRequest={openSkillRequest}
-        onOpenSkillRequestHandled={onOpenSkillRequestHandled}
-      />
-    ),
-    calendars: <CalendarsPane title={titleOf("calendars")} />,
-    api: (
-      <IntegrationsPane
-        title={titleOf("api")}
-        description={t("integrations.api.description")}
-        docsUrl={API_DOCS_URL}
-        actions={
-          isPaid && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!canCreateKey}
-              onClick={() => setCreateKeyRequest((request) => request + 1)}
-            >
-              <Plus className="h-3.5 w-3.5 me-1.5" />
-              {t("apiKeysSection.createButton")}
-            </Button>
-          )
-        }
-      >
-        {isPaid ? (
-          <>
-            <ApiKeysSection createRequest={createKeyRequest} onCanCreateChange={setCanCreateKey} />
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 ps-1 text-xs text-muted-foreground">
-              <span>{t("integrations.api.useWith")}</span>
-              {(
-                [
-                  ["mcp", McpIcon],
-                  ["cli", CliIcon],
-                ] as const
-              ).map(([id, Icon]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => openSection(id)}
-                  className="inline-flex items-center gap-1 rounded-sm text-primary/80 hover:text-primary outline-none focus-visible:ring-1 focus-visible:ring-primary/30 transition-colors"
-                >
-                  <Icon size={13} />
-                  {titleOf(id)}
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <UpsellBar message={t("integrations.api.proRequired")} onUpgrade={onUpgrade} />
-        )}
-      </IntegrationsPane>
-    ),
-    mcp: (
-      <McpPane
-        title={titleOf("mcp")}
-        isPaid={isPaid}
-        onUpgrade={onUpgrade}
-        onCreateKey={() => {
-          setCreateKeyRequest((request) => request + 1);
-          openSection("api");
-        }}
-      />
-    ),
-    cli: <CliPane title={titleOf("cli")} isPaid={isPaid} onUpgrade={onUpgrade} />,
-  };
-
+  const quoted = "'" + command.replaceAll("'", "'\\''") + "'";
+  const meta = Object.fromEntries(INTEGRATIONS_SECTIONS.map((id) => [id, null])) as Record<
+    IntegrationsSection,
+    null
+  >;
   return (
     <div className="@container flex h-full min-h-0">
       <IntegrationsNav
         active={section}
+        onSelect={props.onSectionChange}
         meta={meta}
-        onSelect={onSectionChange}
         className="@max-2xl:hidden"
       />
-
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Outside the scroller, so it stays in view and keeps focus after a pick. */}
         <div className="px-5 pt-6 pb-2 @2xl:hidden">
           <Select
             value={section}
-            onValueChange={(value) => onSectionChange(value as IntegrationsSection)}
+            onValueChange={(value) => props.onSectionChange(value as IntegrationsSection)}
           >
             <SelectTrigger
               className="h-8 w-full text-xs rounded-lg"
@@ -216,26 +63,56 @@ export default function IntegrationsView({
             <SelectContent>
               {INTEGRATIONS_SECTIONS.map((id) => (
                 <SelectItem key={id} value={id}>
-                  {titleOf(id)}
+                  {t(`integrations.nav.sections.${id}`)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-
-        <div ref={scroller} className="flex-1 min-h-0 overflow-y-auto px-8 pt-6 pb-6 @max-2xl:px-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-8 pt-6 pb-6 @max-2xl:px-5">
           <div className="max-w-[760px]">
-            {INTEGRATIONS_SECTIONS.filter((id) => mounted.has(id)).map((id) => (
-              <div
-                key={id}
-                ref={(element) => {
-                  paneElements.current[id] = element;
-                }}
-                hidden={id !== section}
+            {section === "skills" ? (
+              <SkillsPane
+                title={t("integrations.nav.sections.skills")}
+                active
+                onStartSkillChat={props.onStartSkillChat}
+                openSkillRequest={props.openSkillRequest}
+                onOpenSkillRequestHandled={props.onOpenSkillRequestHandled}
+              />
+            ) : (
+              <IntegrationsPane
+                title={t(`whisprlocal.${section}Title`)}
+                description={t(`whisprlocal.${section}Description`)}
               >
-                {panes[id]}
-              </div>
-            ))}
+                <p className="text-xs text-muted-foreground">{t("whisprlocal.appRequired")}</p>
+                {section === "cli" && (
+                  <>
+                    <CopyBlock
+                      value={`${quoted} --cli notes list\n${quoted} --cli transcribe file /path/audio.wav --language fr`}
+                    />
+                    <CopyBlock value={`${quoted} --cli --help`} />
+                  </>
+                )}
+                {section === "mcp" && (
+                  <CopyBlock
+                    value={JSON.stringify(
+                      { mcpServers: { whisprlocal: { command, args: ["--mcp"] } } },
+                      null,
+                      2
+                    )}
+                  />
+                )}
+                {section === "api" && (
+                  <>
+                    <p className="text-sm">{t("whisprlocal.apiSecurity")}</p>
+                    <CopyBlock
+                      value={`${quoted} --cli health\n${quoted} --cli notes search --q exemple\n${quoted} --cli dictionary list\n${quoted} --cli history list`}
+                    />
+                  </>
+                )}
+                <p className="text-xs text-muted-foreground">{t("whisprlocal.localOperations")}</p>
+              </IntegrationsPane>
+            )}
           </div>
         </div>
       </div>

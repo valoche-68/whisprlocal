@@ -227,37 +227,20 @@ export function resetOnboardingProgress(storage: OnboardingStorage): void {
 }
 
 export function getOnboardingRoute(context: OnboardingRouteContext): OnboardingStepId[] {
-  if (context.authPath === null) return ["auth"];
-
-  const setupChoice = context.skipSetupChoice ? [] : (["setup-choice"] as OnboardingStepId[]);
-
-  const route =
-    context.authPath === "guest"
-      ? // Guests still need the permission grants and a hotkey they have seen:
-        // finalizeOnboarding registers dictationHotkey either way, and skipping
-        // these steps shipped users who neither granted the mic nor knew their
-        // trigger key.
-        (["auth", "permissions", "dictation-hotkey", "setup-choice"] as OnboardingStepId[])
-      : [
-          ...ACCOUNT_ROUTE,
-          ...(context.agentAllowed
-            ? (["assistant-hotkey", "assistant-demo"] as OnboardingStepId[])
-            : []),
-          ...setupChoice,
-        ];
-
-  if (context.requiredModelsPending && context.authPath === "account") {
-    route.splice(route.indexOf("auth") + 1, 0, "required-models");
-  }
-
+  // Keep the official screens and layout. Account and connected-calendar steps
+  // do not belong to the independent local edition.
+  const route: OnboardingStepId[] = ["permissions", "languages", "use-cases", "dictation-hotkey"];
+  if (context.agentAllowed) route.push("assistant-hotkey");
+  route.push("setup-choice");
   if (context.setupMode && context.setupMode !== "cloud") {
     route.push(
       ...SETUP_ROUTES[context.setupMode].filter(
-        (stepId) => context.agentAllowed || !stepId.endsWith("assistant")
+        (step) => context.agentAllowed || !step.endsWith("assistant")
       )
     );
+    route.push("dictation-demo");
+    if (context.agentAllowed) route.push("assistant-demo");
   }
-
   return route;
 }
 

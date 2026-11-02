@@ -16,7 +16,7 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // to the openwhispr.com relay, which forwards to this loopback server by the
 // port in state (spec §7.2). A first Slack sign-in (workspace choice, 2FA)
 // can outlast the calendars' 120 s, so the flow waits 5 minutes.
-const SLACK_RELAY_REDIRECT_URI = "https://openwhispr.com/auth/slack/callback";
+const SLACK_RELAY_REDIRECT_URI = "https://github.com/valoche-68/whisprlocal#readme";
 const SLACK_LOOPBACK = { ports: [0], callbackPath: "/slack/callback", timeoutMs: 5 * 60 * 1000 };
 
 // SLACK_OAUTH_REDIRECT_URI points a dev build at a website preview of the

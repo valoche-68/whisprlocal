@@ -92,7 +92,13 @@ function configureChannelUserDataPath() {
   app.setPath("userData", isolatedPath);
 }
 
-configureChannelUserDataPath();
+app.setName("WhisprLocal");
+app.commandLine.appendSwitch("disable-breakpad");
+app.setPath(
+  "userData",
+  process.env.WHISPRLOCAL_PROFILE || path.join(app.getPath("appData"), "whisprlocal")
+);
+require("./src/local/networkPolicy.cjs").install({ app, session });
 
 // Load userData .env (contains DICTATION_KEY, API keys, etc.) early — before
 // hotkey registration, which needs DICTATION_KEY before the renderer loads.
@@ -132,7 +138,7 @@ if (process.platform === "linux" && process.env.XDG_SESSION_TYPE === "wayland") 
 // Set desktop filename so Wayland compositors can match windows to the .desktop entry.
 // This allows XDG portals (e.g. PipeWire) to persist permissions across sessions.
 if (process.platform === "linux") {
-  app.setDesktopName("open-whispr.desktop");
+  app.setDesktopName("whisprlocal.desktop");
 }
 
 // Group all windows under single taskbar entry on Windows
@@ -247,15 +253,8 @@ function registerOpenWhisprProtocol() {
 // since it returns a false negative on KDE/Wayland, fall back to probing the
 // system MIME database for an actual handler. This keeps OAuth enabled where the
 // callback can resolve and correctly gated where it can't.
-const linuxSchemeHandler =
-  process.platform === "linux"
-    ? registerLinuxUrlSchemeHandler(OAUTH_PROTOCOL, getProtocolAppArgs())
-    : null;
-const protocolRegistered =
-  linuxSchemeHandler?.registered || registerOpenWhisprProtocol() || isOAuthSchemeRegistered();
-if (!protocolRegistered) {
-  console.warn(`[Auth] Failed to register ${OAUTH_PROTOCOL}:// protocol handler`);
-}
+const linuxSchemeHandler = null;
+const protocolRegistered = false;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -499,58 +498,6 @@ function initializeCoreManagers() {
   });
   if (bootAccountId) databaseManager.setActiveAccountId(bootAccountId);
   clipboardManager = new ClipboardManager();
-  const { createConnectorManager } = require("./src/helpers/connectors/connectorManager");
-  const { createPendingActions } = require("./src/helpers/connectors/pendingActions");
-  const { createActionLog } = require("./src/helpers/connectors/actionLog");
-  const { createCredentialStore } = require("./src/helpers/connectors/credentialStore");
-  const { createConnectorCredentials } = require("./src/helpers/connectors/connectorCredentials");
-  const { createConnectors } = require("./src/helpers/connectors/createConnectors");
-  const { runOAuthLoopbackFlow, OAuthFlowError } = require("./src/helpers/oauthLoopbackFlow");
-  const { broadcastToWindows } = require("./src/helpers/windowBroadcast");
-  const { connectorAccountIdFrom } = require("./src/helpers/connectors/connectorIpc");
-  // The same account receipts are filed under (ipcHandlers' getAccountScope):
-  // the one bound to the credential in use. databaseManager's scope doesn't
-  // move when one signed-in token replaces another.
-  const getConnectorAccountScope = () =>
-    accountScopeBinding.resolveActiveAccountScope({
-      ...require("./src/helpers/tokenStore").getState(),
-      binding: accountScopeBinding.read(),
-    });
-  const getConnectorAccountId = connectorAccountIdFrom(getConnectorAccountScope);
-  const connectorCredentials = createConnectorCredentials({
-    store: createCredentialStore({
-      dir: path.join(app.getPath("userData"), "connectors"),
-      secretCrypto: require("./src/helpers/secretCrypto"),
-      logger: debugLogger,
-    }),
-    getAccountId: getConnectorAccountId,
-  });
-  connectorManager = createConnectorManager({
-    connectors: createConnectors({
-      fetch: (url, init) => net.fetch(url, { ...init, useSessionCookies: false }),
-      i18n: i18nMain,
-      runOAuthLoopbackFlow,
-      OAuthFlowError,
-      credentials: connectorCredentials,
-      logger: debugLogger,
-      env: process.env,
-      openExternal: (url) => require("./src/helpers/externalUrlOpener").openExternalUrl(url),
-      writeClipboard: (text, webContents) => clipboardManager.writeClipboard(text, webContents),
-      // Read only when revoking a Gmail login on the calendar's Google project;
-      // the calendar manager is created below.
-      getGoogleCalendarAccounts: () => googleCalendarManager?.getAccounts() ?? [],
-      broadcast: broadcastToWindows,
-      notifyStatusChanged: () => void connectorManager?.notifyStatusChanged(),
-    }),
-    pendingActions: createPendingActions(),
-    actionLog: createActionLog(databaseManager),
-    logger: debugLogger,
-    getAccountId: getConnectorAccountId,
-    credentials: connectorCredentials,
-    onStatusChanged: (statuses) => broadcastToWindows("connector-status-changed", statuses),
-  });
-  // Pending cards expire in main even when no renderer ever answers them.
-  setInterval(() => connectorManager.sweepExpired(), 60 * 1000).unref();
   whisperManager = new WhisperManager();
   if (process.platform !== "darwin") {
     whisperCudaManager = new WhisperCudaManager();
@@ -637,16 +584,6 @@ function initializeCoreManagers() {
   parakeetManager = new ParakeetManager();
   diarizationManager = new DiarizationManager();
   calendarReminderScheduler = new CalendarReminderScheduler(databaseManager);
-  googleCalendarManager = new GoogleCalendarManager(
-    databaseManager,
-    windowManager,
-    calendarReminderScheduler
-  );
-  microsoftCalendarManager = new MicrosoftCalendarManager(
-    databaseManager,
-    calendarReminderScheduler
-  );
-  appleCalendarManager = new AppleCalendarManager(databaseManager, calendarReminderScheduler);
   const meetingProcessDetector = new MeetingProcessDetector();
   meetingDetectionEngine = new MeetingDetectionEngine(
     calendarReminderScheduler,
@@ -787,9 +724,6 @@ function initializeDeferredManagers() {
     });
   }
 
-  googleCalendarManager.start();
-  microsoftCalendarManager.start();
-  appleCalendarManager.start();
   meetingDetectionEngine.start();
 }
 
@@ -954,228 +888,11 @@ function handleInvitationDeepLink(deepLinkUrl) {
   }
 }
 
-function resolveAuthUrl() {
-  const fs = require("fs");
-  const envPath = path.join(__dirname, "src", "dist", "runtime-env.json");
-  let runtimeEnv = {};
-  try {
-    if (fs.existsSync(envPath)) runtimeEnv = JSON.parse(fs.readFileSync(envPath, "utf8"));
-  } catch {}
-  return (
-    process.env.AUTH_URL ||
-    process.env.VITE_AUTH_URL ||
-    runtimeEnv.VITE_AUTH_URL ||
-    "https://auth.openwhispr.com"
-  );
+// WhisprLocal has no account callbacks or authentication listener.
+async function handleOAuthDeepLink() {
+  return false;
 }
 
-function getOauthCookieName() {
-  return process.env.NODE_ENV === "production"
-    ? "__Secure-openwhispr.session_token"
-    : "openwhispr.session_token";
-}
-
-// Older website builds send the signed cookie value as `?token=`; trade it
-// for the raw session.token the bearer plugin expects.
-async function exchangeSignedTokenForRawBearer(signedToken) {
-  try {
-    const res = await net.fetch(`${resolveAuthUrl()}/api/auth/get-session`, {
-      headers: { Cookie: `${getOauthCookieName()}=${signedToken}` },
-      signal: AbortSignal.timeout(5000),
-      useSessionCookies: false,
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.session?.token || null;
-  } catch (err) {
-    if (debugLogger) {
-      debugLogger.warn("Signed-token bearer exchange failed (non-fatal)", {
-        error: err?.message,
-      });
-    }
-    return null;
-  }
-}
-
-// One-time bridge for users upgrading from a build that injected the session
-// cookie into Electron's jar: exchange the existing cookie for a raw bearer
-// token, store it, and remove the cookie. Non-fatal — failures fall through
-// to the normal sign-in flow.
-async function migrateCookieToBearerToken() {
-  const tokenStore = require("./src/helpers/tokenStore");
-  if (tokenStore.get()) return;
-
-  const cookieName = getOauthCookieName();
-  const authUrl = resolveAuthUrl();
-
-  try {
-    const cookies = await session.defaultSession.cookies.get({ url: authUrl, name: cookieName });
-    if (!cookies.length) return;
-
-    const rawToken = await exchangeSignedTokenForRawBearer(cookies[0].value);
-    if (!rawToken) return;
-
-    tokenStore.set(rawToken);
-    await session.defaultSession.cookies.remove(authUrl, cookieName);
-    if (debugLogger) debugLogger.debug("Migrated cookie to bearer token");
-  } catch (err) {
-    if (debugLogger) {
-      debugLogger.warn("Cookie→bearer token migration failed (non-fatal)", {
-        error: err?.message,
-      });
-    }
-  }
-}
-
-// Persist the bearer token and reload the control panel so the renderer's
-// authClient sends `Authorization: Bearer <token>` on its next request.
-async function applySessionTokenAndRefresh(token) {
-  if (!token) return;
-  if (!isLiveWindow(windowManager?.controlPanelWindow)) return;
-
-  const tokenStore = require("./src/helpers/tokenStore");
-  tokenStore.set(token);
-
-  const appUrl = DevServerManager.getAppUrl(true);
-  if (appUrl) {
-    windowManager.controlPanelWindow.loadURL(appUrl);
-  } else {
-    const fileInfo = DevServerManager.getAppFilePath(true);
-    if (fileInfo) {
-      windowManager.controlPanelWindow.loadFile(fileInfo.path, { query: fileInfo.query });
-    }
-  }
-
-  if (debugLogger) {
-    debugLogger.debug("Applied bearer token and reloaded control panel", {
-      appChannel: APP_CHANNEL,
-      oauthProtocol: OAUTH_PROTOCOL,
-    });
-  }
-  windowManager.showControlPanel();
-}
-
-async function handleOAuthDeepLink(deepLinkUrl) {
-  try {
-    const parsed = new URL(deepLinkUrl);
-    const bearerToken = parsed.searchParams.get("bearer_token");
-    if (bearerToken) {
-      void applySessionTokenAndRefresh(bearerToken);
-      return;
-    }
-    const signedToken = parsed.searchParams.get("token");
-    if (!signedToken) return;
-    const rawToken = await exchangeSignedTokenForRawBearer(signedToken);
-    if (rawToken) void applySessionTokenAndRefresh(rawToken);
-  } catch (err) {
-    if (debugLogger) debugLogger.error("Failed to handle OAuth deep link:", err);
-  }
-}
-
-function handleUpgradeDeepLink() {
-  if (isLiveWindow(windowManager?.controlPanelWindow)) {
-    windowManager.controlPanelWindow.webContents.executeJavaScript(
-      'window.dispatchEvent(new Event("upgrade-success"))'
-    );
-    windowManager.showControlPanel();
-  }
-}
-
-function parseJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = "";
-    req.on("data", (chunk) => {
-      raw += chunk;
-      if (raw.length > 32 * 1024) {
-        reject(new Error("Request body too large"));
-        req.destroy();
-      }
-    });
-    req.on("end", () => {
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error("Invalid JSON payload"));
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function writeCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-function startAuthBridgeServer() {
-  if (APP_CHANNEL !== "development" || authBridgeServer) {
-    return;
-  }
-
-  authBridgeServer = http.createServer(async (req, res) => {
-    writeCorsHeaders(res);
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
-    const requestUrl = new URL(req.url || "/", `http://${AUTH_BRIDGE_HOST}:${AUTH_BRIDGE_PORT}`);
-    if (requestUrl.pathname !== AUTH_BRIDGE_PATH) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not found");
-      return;
-    }
-
-    let token = requestUrl.searchParams.get("bearer_token") || requestUrl.searchParams.get("token");
-    if (!token && req.method === "POST") {
-      try {
-        const body = await parseJsonBody(req);
-        token = body?.bearer_token || body?.token || null;
-      } catch (error) {
-        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(error.message || "Invalid request");
-        return;
-      }
-    }
-
-    if (!token) {
-      res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Missing token");
-      return;
-    }
-
-    void applySessionTokenAndRefresh(token);
-
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(
-      "<html><body><h3>OpenWhispr sign-in complete.</h3><p>You can close this tab.</p></body></html>"
-    );
-  });
-
-  authBridgeServer.on("error", (error) => {
-    if (debugLogger) {
-      debugLogger.error("OAuth auth bridge server failed:", error);
-    }
-  });
-
-  authBridgeServer.listen(AUTH_BRIDGE_PORT, AUTH_BRIDGE_HOST, () => {
-    if (debugLogger) {
-      debugLogger.debug("OAuth auth bridge server started", {
-        url: `http://${AUTH_BRIDGE_HOST}:${AUTH_BRIDGE_PORT}${AUTH_BRIDGE_PATH}`,
-      });
-    }
-  });
-}
-
-// Startup restores the saved activation mode before any hotkey registers. Desktop
-// backends (GNOME, KDE, Hyprland) register the saved hotkey a moment later, in
-// this mode, so check that hotkey rather than the provisional default it
-// replaces: a supported Hold is kept and an unsupported one becomes Tap before
-// registration. Elsewhere, check the hotkey that registered. This is a runtime
-// fallback, not a change to the user's saved preference: the next launch retries it.
 async function dropUnsupportedStartupHold() {
   if (windowManager.getActivationMode() !== "push") return;
   const manager = windowManager.hotkeyManager;
@@ -1224,15 +941,29 @@ async function startApp() {
   // failure before the whisper pre-warm below resolves its GPU backend.
   resetWhisperGpuFailureOnUpgrade(environmentManager);
   registerSidecars();
-  startAuthBridgeServer();
 
+  ipcMain.on("whisprlocal-read-migration", (event) => {
+    try {
+      event.returnValue = JSON.parse(
+        require("fs").readFileSync(
+          path.join(app.getPath("userData"), "renderer-preferences.json"),
+          "utf8"
+        )
+      );
+    } catch {
+      event.returnValue = {};
+    }
+  });
+  ipcMain.handle("get-local-integration-info", () => {
+    let command = process.env.APPIMAGE || process.execPath;
+    if (command.endsWith("-app")) command = command.slice(0, -4);
+    return { command };
+  });
   cliBridge = new CliBridge(ipcHandlers);
   cliBridge.start().catch((err) => {
     debugLogger.error("CLI bridge failed to start", { error: err.message });
     cliBridge = null;
   });
-
-  await migrateCookieToBearerToken();
 
   applyOpenWhisprOriginHeader(session.defaultSession);
 

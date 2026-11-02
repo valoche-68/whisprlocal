@@ -404,7 +404,7 @@ export function ByokProviderStep({
     if (!isSameEndpoint(baseUrl, seed.keyedBaseUrl)) return "";
     return assistant ? store.chatAgentCustomApiKey : store.customTranscriptionApiKey;
   };
-  const [selfHosted, setSelfHosted] = useState(seed.selfHosted);
+  const [selfHosted, setSelfHosted] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState(seed.provider);
   const [selectedModel, setSelectedModel] = useState(seed.model);
   const [draftApiKey, setDraftApiKey] = useState(() =>
@@ -605,7 +605,7 @@ export function ByokProviderStep({
       <SetupStageStepper stepId={stepId} />
 
       <div className="mt-3 space-y-3">
-        {selfHostedAllowed && (
+        {false && (
           <button
             type="button"
             role="checkbox"

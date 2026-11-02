@@ -53,7 +53,7 @@ export function getOnboardingSetupAvailability({
       (isModeAllowedByPolicy(policy, "llm", "self-hosted") &&
         isProviderAllowedByPolicy(policy, "llm", "custom")));
 
-  return { cloud, local, byok, selfHosted };
+  return { cloud: false, local, byok: false, selfHosted };
 }
 
 export function hasAvailableOnboardingSetup(availability: OnboardingSetupAvailability): boolean {

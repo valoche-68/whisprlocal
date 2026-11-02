@@ -1,8 +1,8 @@
-const { autoUpdater } = require("electron-updater");
+const autoUpdater = process.env.APPIMAGE
+  ? require("electron-updater").autoUpdater
+  : new (require("./local/linuxUpdateBackend.cjs"))();
 
-// electron-updater can only replace an AppImage on Linux; deb, rpm and tar.gz
-// installs are updated by the package manager instead.
-const isUpdaterSupported = process.platform !== "linux" || Boolean(process.env.APPIMAGE);
+const isUpdaterSupported = process.platform === "linux" && process.arch === "x64";
 
 class UpdateManager {
   constructor() {
@@ -33,8 +33,8 @@ class UpdateManager {
 
     autoUpdater.setFeedURL({
       provider: "github",
-      owner: "OpenWhispr",
-      repo: "openwhispr",
+      owner: "valoche-68",
+      repo: "whisprlocal",
       private: false,
     });
 
@@ -333,7 +333,7 @@ class UpdateManager {
   // updates are off; a failed background check is logged and never surfaced.
   _autoCheckForUpdates(label) {
     console.log(`🔄 ${label} update check...`);
-    autoUpdater.checkForUpdates().catch((err) => {
+    this.checkForUpdates().catch((err) => {
       console.error(`${label} update check failed:`, err);
     });
   }

@@ -1,6 +1,6 @@
 import type { NoteAccessGrant, NoteAccessState, ShareSettings } from "../../types/electron";
 
-const SHARE_VIEWER_BASE_URL = "https://notes.openwhispr.com";
+const SHARE_VIEWER_BASE_URL = "https://github.com/valoche-68/whisprlocal#readme";
 
 type ShareLinkSettings = Pick<ShareSettings, "visibility" | "token_prefix">;
 

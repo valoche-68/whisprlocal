@@ -30,7 +30,7 @@ const LINEAR_LOOPBACK = {
 // can't be registered. Linear redirects to the openwhispr.com relay instead,
 // which forwards the browser to the loopback server by the port in state
 // (connector spec §7.2, as for Slack).
-const LINEAR_RELAY_REDIRECT_URI = "https://openwhispr.com/auth/linear/callback";
+const LINEAR_RELAY_REDIRECT_URI = "https://github.com/valoche-68/whisprlocal#readme";
 
 // LINEAR_OAUTH_REDIRECT_URI points a dev build at a website preview of the
 // relay. Only an https: URL is accepted; anything else uses the real relay.

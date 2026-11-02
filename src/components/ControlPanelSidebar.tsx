@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import { cn } from "./lib/utils";
 import SupportDropdown from "./ui/SupportDropdown";
 import { Button } from "./ui/button";
-import WorkspaceSwitcher from "./WorkspaceSwitcher";
+const LocalIdentity = (_props: Record<string, unknown>) => (
+  <div className="px-2 py-2 text-xs text-muted-foreground">WhisprLocal</div>
+);
 import type { UpsellDecision } from "../lib/upsell";
 import { useControlPanelNavItems, type ControlPanelView } from "./controlPanelNav";
 
@@ -46,8 +48,8 @@ export default function ControlPanelSidebar({
     () => localStorage.getItem("upgradeProDismissed") === "true"
   );
 
-  const showLimitBanner = upsell === "show" && Boolean(isSignedIn) && Boolean(isOverLimit);
-  const showUpgradeBanner = upsell === "show" && !showLimitBanner && !upgradeDismissed;
+  const showLimitBanner = false;
+  const showUpgradeBanner = false;
 
   const navItems = useControlPanelNavItems();
 
@@ -198,7 +200,7 @@ export default function ControlPanelSidebar({
         />
 
         <div className="pt-1">
-          <WorkspaceSwitcher />
+          <LocalIdentity />
         </div>
       </div>
     </div>

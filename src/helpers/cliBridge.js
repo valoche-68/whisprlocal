@@ -19,7 +19,7 @@ const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 const NO_CONTENT = Symbol("CliBridge.NoContent");
 
 function getBridgeFilePath() {
-  return path.join(os.homedir(), ".openwhispr", "cli-bridge.json");
+  return path.join(os.homedir(), ".whisprlocal", "cli-bridge.json");
 }
 
 async function findAvailablePort() {
@@ -173,7 +173,7 @@ class CliBridge {
 
   _writeBridgeFile() {
     const dir = path.dirname(this.bridgeFilePath);
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const payload = JSON.stringify({
       version: BRIDGE_FILE_VERSION,
       port: this.port,

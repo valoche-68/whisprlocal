@@ -3,14 +3,13 @@ import { Calendar, Key, Link2, Network, SkillStack, Terminal } from "../icons";
 
 export type IntegrationsSection = "connectors" | "skills" | "calendars" | "api" | "mcp" | "cli";
 
-export const DEFAULT_INTEGRATIONS_SECTION: IntegrationsSection = "calendars";
+export const DEFAULT_INTEGRATIONS_SECTION: IntegrationsSection = "cli";
 
 export const INTEGRATIONS_SECTION_GROUPS: ReadonlyArray<{
   id: "assistant" | "meetings" | "developer";
   sections: readonly IntegrationsSection[];
 }> = [
-  { id: "meetings", sections: ["calendars"] },
-  { id: "assistant", sections: ["connectors", "skills"] },
+  { id: "assistant", sections: ["skills"] },
   { id: "developer", sections: ["api", "mcp", "cli"] },
 ];
 

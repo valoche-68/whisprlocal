@@ -30,38 +30,12 @@ export class CloudApiError extends Error {
   }
 }
 
-async function cloudRequest<T = unknown>(
-  method: string,
-  path: string,
-  body?: unknown,
-  isPublic?: boolean,
-  authGenerationOverride?: number
-): Promise<T> {
-  const expectedAuthGeneration = isPublic
-    ? undefined
-    : (authGenerationOverride ?? getValidatedAuthGeneration() ?? undefined);
-  const result = (await window.electronAPI?.cloudApiRequest?.({
-    method,
-    path,
-    body,
-    public: isPublic,
-    expectedAuthGeneration,
-  })) as (CloudApiResponse<T> & { details?: unknown }) | undefined;
-
-  if (!result?.success) {
-    if (result?.code === "AUTH_CONTEXT_CHANGED" || result?.code === "AUTH_CONTEXT_UNVALIDATED") {
-      await readAuthTokenState().catch(() => undefined);
-      invalidateValidatedAuthContext();
-    }
-    throw new CloudApiError(
-      result?.error ?? "Cloud API request failed",
-      result?.status ?? 0,
-      result?.code,
-      result?.details
-    );
-  }
-
-  return result.data as T;
+async function cloudRequest<T = unknown>(..._args: unknown[]): Promise<T> {
+  throw new CloudApiError(
+    "Accounts and official services are unavailable in WhisprLocal",
+    0,
+    "LOCAL_ONLY"
+  );
 }
 
 export async function cloudGet<T = unknown>(path: string): Promise<T> {

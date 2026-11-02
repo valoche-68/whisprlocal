@@ -10,6 +10,12 @@ function buildLinuxWrapperScript(binaryName) {
 HERE="$(dirname "$(readlink -f "\${BASH_SOURCE[0]}")")"
 FLAGS=()
 
+# CLI and MCP use Electron's bundled Node runtime, without opening another GUI.
+if [[ "$1" == "--cli" || "$1" == "--mcp" ]]; then
+  ELECTRON_RUN_AS_NODE=1 exec "$HERE/${binaryName}-app" "$HERE/resources/app.asar/src/local/command.cjs" "$@"
+fi
+
+
 # Wayland: forces XWayland (overlay positioning requires X11)
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
   FLAGS+=(--ozone-platform=x11)

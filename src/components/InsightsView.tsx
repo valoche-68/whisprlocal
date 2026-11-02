@@ -463,122 +463,19 @@ function YourUsage({
   );
 }
 
-export default function InsightsView({ onSignIn }: InsightsViewProps) {
+export default function InsightsView(_props: InsightsViewProps) {
   const { t } = useTranslation();
-  const { isLoaded, isSignedIn, user } = useAuth();
-  const authValidated = hasValidatedAuthContext();
-  const { dataRetentionEnabled: personalDataRetentionEnabled, insightsSyncEnabled } = useSettings();
-  const dataRetentionEnabled = usePolicyStore((policyState) =>
-    effectiveLocalHistoryEnabled(policyState, personalDataRetentionEnabled)
-  );
-  const { canToggleSync, enableInsightsSync, optInDialog, syncAllowedByPolicy, unclaimedCount } =
-    useInsightsSyncOptIn();
-  const participationEnabled = useLeaderboardParticipationStore((state) => state.enabled);
-  const participationError = useLeaderboardParticipationStore((state) => state.error);
-  const participationReady = useLeaderboardParticipationStore((state) => state.ready);
-  const participationLeavePending = useLeaderboardParticipationStore((state) => state.leavePending);
-  const [activeTab, setActiveTab] = useState("usage");
-  const [syncError, setSyncError] = useState(false);
-  // A managed workspace that forbids cloud backup forbids these counters with
-  // it, so the page stays device-scoped even with the preference left on.
-  const syncActive =
-    isSignedIn &&
-    authValidated &&
-    insightsSyncEnabled &&
-    syncAllowedByPolicy &&
-    dataRetentionEnabled;
-  const claimAvailable = canOfferAnalyticsClaim({
-    signedIn: isSignedIn,
-    syncAllowedByPolicy,
-    dataRetentionEnabled,
-    insightsSyncEnabled,
-    unclaimedCount,
-  });
-  const showSyncAction =
-    activeTab === "usage" && isSignedIn && authValidated && (!syncActive || claimAvailable);
-  const syncActionDisabled = !canToggleSync || !dataRetentionEnabled || !syncAllowedByPolicy;
-  const syncStatusLabel = syncActive
-    ? syncError
-      ? t("insights.syncFallback")
-      : t("insights.synced")
-    : t("insights.onDevice");
-
+  const dataRetentionEnabled = useSettings().dataRetentionEnabled;
   return (
     <div className={cn(PAGE_CONTENT_WIDTH_CLASS, "flex min-h-full flex-col px-6 py-6")}>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col">
-        <div className="flex min-h-10 flex-wrap items-center justify-between gap-4">
-          <TabsList variant="pill">
-            <TabsTrigger value="usage" variant="pill">
-              {t("insights.yourUsage")}
-            </TabsTrigger>
-            <TabsTrigger value="leaderboard" variant="pill">
-              {t("insights.leaderboard.title")}
-            </TabsTrigger>
-          </TabsList>
-
-          {activeTab === "usage" ? (
-            <div className="flex shrink-0 items-center gap-3">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Cloud size={13} />
-                {syncStatusLabel}
-              </div>
-              {showSyncAction && (
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  className="h-7 rounded-[7px] px-2.5 text-[11px]"
-                  disabled={syncActionDisabled}
-                  onClick={() => void enableInsightsSync()}
-                >
-                  <CloudUpload size={13} />
-                  {t(syncActive ? "insights.claimInclude" : "insights.enableSync")}
-                </Button>
-              )}
-            </div>
-          ) : (
-            isSignedIn &&
-            participationReady &&
-            participationError === null &&
-            !participationEnabled && (
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Trophy size={13} />
-                {t(
-                  participationLeavePending
-                    ? "insights.leaderboard.leavePending"
-                    : "insights.leaderboard.disabled"
-                )}
-              </div>
-            )
-          )}
-        </div>
-
-        <TabsContent value="usage" className="mt-6 flex flex-1 flex-col">
-          <YourUsage
-            accountId={user?.id ?? null}
-            dataRetentionEnabled={dataRetentionEnabled}
-            isLoaded={isLoaded}
-            onSyncErrorChange={setSyncError}
-            syncActive={syncActive}
-          />
-          {isLoaded && !syncActive && (
-            <p className="mt-auto pt-8 text-center text-[11px] text-muted-foreground/70">
-              {t("insights.onDevicePrivacy")}
-            </p>
-          )}
-        </TabsContent>
-        <TabsContent value="leaderboard" className="mt-0">
-          <Suspense fallback={isSignedIn ? <LeaderboardSkeleton /> : null}>
-            <LeaderboardView
-              enableInsightsSync={enableInsightsSync}
-              insightsSyncEnabled={insightsSyncEnabled}
-              onSignIn={onSignIn}
-              syncAllowedByPolicy={syncAllowedByPolicy}
-            />
-          </Suspense>
-        </TabsContent>
-      </Tabs>
-      {optInDialog}
+      <p className="text-xs text-muted-foreground mb-6">{t("insights.onDevice")}</p>
+      <YourUsage
+        accountId={null}
+        dataRetentionEnabled={dataRetentionEnabled}
+        isLoaded={true}
+        syncActive={false}
+        onSyncErrorChange={() => {}}
+      />
     </div>
   );
 }

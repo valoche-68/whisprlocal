@@ -59,110 +59,13 @@ function parseRpc(text, id) {
   throw new Error("Missing help response");
 }
 
-function createProductHelp({ fetch, now = Date.now }) {
-  // Public, fixed-topic queries only: no account credentials, settings or user text.
-  let windowStart = now();
-  let requests = 0;
-  async function lookup({ topic, page }, { signal, allowed }) {
-    if (
-      !Object.hasOwn(topics, topic) ||
-      (page !== undefined && (!validPage(page) || !topics[topic].paths.includes(page)))
-    )
-      throw new Error(
-        "Invalid help request: use an exact path returned for this topic, including its leading slash and without .mdx. Stop retrying the path; request the topic essentials instead."
-      );
-    if (signal.aborted) throw new Error("Cancelled");
-    if (allowed !== true && allowed !== "allowed")
-      return bundled(
-        topic,
-        allowed === "blocked" || allowed === false
-          ? "policy"
-          : allowed === "signed_out"
-            ? "privacy"
-            : "unavailable"
-      );
-    if (now() - windowStart >= 60000) {
-      windowStart = now();
-      requests = 0;
-    }
-    if (++requests > 12) return bundled(topic, "rateLimit");
-    const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(12000)]);
-    try {
-      let sessionId;
-      async function rpc(id, method, params) {
-        const response = await fetch(ENDPOINT, {
-          method: "POST",
-          redirect: "error",
-          credentials: "omit",
-          signal: boundedSignal,
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json, text/event-stream",
-            "MCP-Protocol-Version": "2024-11-05",
-            ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}),
-          },
-          body: JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, params }),
-        });
-        if (!response.ok) throw new Error("Help unavailable");
-        sessionId = response.headers.get("mcp-session-id") || sessionId;
-        if (id === null) {
-          await response.body?.cancel();
-          return;
-        }
-        return parseRpc(await readBounded(response), id);
-      }
-      await rpc(1, "initialize", {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "openwhispr-help", version: "1" },
-      });
-      await rpc(null, "notifications/initialized", {});
-      // Read complete curated pages, not broad search snippets that can rank another
-      // platform first or truncate the instructions that answer the question.
-      const paths = page ? [page] : topics[topic].paths;
-      const articles = [];
-      let totalText = 0;
-      for (const [index, path] of paths.entries()) {
-        const result = await rpc(2 + index, "tools/call", {
-          name: "query_docs_filesystem_open_whispr",
-          arguments: { command: `cat ${path}.mdx` },
-        });
-        const rawText = (result.content || [])
-          .filter((c) => c.type === "text" && typeof c.text === "string")
-          .map((c) => c.text)
-          .join("\n");
-        const exit = rawText.match(/^exit:\s*(\d+)/);
-        if (exit && exit[1] !== "0") return bundled(topic, "unavailable");
-        const text = rawText.replace(/^exit: 0\r?\n--- stdout ---\r?\n/, "");
-        // A partial, empty or failed page is not complete evidence. Fall back
-        // explicitly rather than silently clipping content and calling it live.
-        if (
-          !text.trim() ||
-          text.length > MAX_TEXT ||
-          (totalText += text.length) > MAX_TOTAL_TEXT ||
-          /^(?:error:|file not found|no such file)/im.test(text) ||
-          /\[(?:output |content )?truncated\]/i.test(text)
-        ) {
-          return bundled(topic, "unavailable");
-        }
-        articles.push({
-          untrusted: true,
-          title:
-            text.match(/^# (.+)$/m)?.[1] ||
-            text.match(/^title:\s*["']?([^"'\n]+)/m)?.[1] ||
-            path.split("/").pop(),
-          path,
-          url: ORIGIN + path,
-          text,
-        });
-      }
-      return { source: "live", reason: null, retrievedAt: new Date(now()).toISOString(), articles };
-    } catch {
-      if (signal.aborted) throw new Error("Cancelled");
-      return bundled(topic, "unavailable");
-    }
-  }
-  return { lookup };
+function createProductHelp() {
+  return {
+    async lookup({ topic } = {}) {
+      if (!Object.hasOwn(topics, topic)) throw new Error("Unknown help topic");
+      return bundled(topic, "local-edition");
+    },
+  };
 }
 
 function remoteHelpPolicyState(snapshot, appVersion) {

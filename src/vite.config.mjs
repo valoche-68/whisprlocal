@@ -35,8 +35,8 @@ export default defineConfig(({ mode }) => {
         name: "write-runtime-env",
         writeBundle() {
           const runtimeEnv = {
-            VITE_OPENWHISPR_API_URL: env.VITE_OPENWHISPR_API_URL || "",
-            VITE_AUTH_URL: env.VITE_AUTH_URL || "",
+
+
           };
           fs.writeFileSync(
             path.resolve(__dirname, "dist", "runtime-env.json"),

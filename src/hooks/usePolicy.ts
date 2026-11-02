@@ -57,15 +57,18 @@ export function usePolicyModeOptions<T extends { id: InferenceMode; disabled?: b
   }
 ): PolicyModeOptions<T> {
   const snapshot = usePolicySnapshot();
-  const modes = filterModeOptionsByPolicy(options, scope, snapshot, providerCatalog);
+  const modes = filterModeOptionsByPolicy(
+    options.filter((o) => o.id === "local" || o.id === "self-hosted"),
+    scope,
+    snapshot,
+    providerCatalog
+  );
   const selectionIsVisible = modes.some((option) => option.id === selectedMode && !option.disabled);
   const preservesRawSelection = snapshot.status === "idle" || snapshot.status === "unmanaged";
   return {
     modes,
-    effectiveMode:
-      preservesRawSelection || selectionIsVisible
-        ? selectedMode
-        : reconcilePolicyModeSelection(options, scope, snapshot, selectedMode, providerCatalog),
-    isModeAllowed: (mode: InferenceMode) => isModeAllowedByPolicy(snapshot, scope, mode),
+    effectiveMode: selectionIsVisible ? selectedMode : (modes[0]?.id ?? "local"),
+    isModeAllowed: (mode: InferenceMode) =>
+      (mode === "local" || mode === "self-hosted") && isModeAllowedByPolicy(snapshot, scope, mode),
   };
 }

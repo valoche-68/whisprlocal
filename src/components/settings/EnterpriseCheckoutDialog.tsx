@@ -27,7 +27,7 @@ import { openExternalLink } from "../../utils/externalLinks";
 import type { Workspace } from "../../types/electron";
 
 const SEAT_LIMIT = 500;
-const CONTACT_SALES_URL = "https://openwhispr.com/contact-sales";
+const CONTACT_SALES_URL = "https://github.com/valoche-68/whisprlocal#readme";
 
 // The API's coded billing refusals, localized; uncoded errors fall back to
 // the server's own message.

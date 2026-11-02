@@ -1,0 +1,22 @@
+name: Local edition checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild better-sqlite3 --runtime=node
+      - run: npm run typecheck && npm run build:renderer
+      - run: node scripts/whisprlocal/checks.cjs && npm run test:local

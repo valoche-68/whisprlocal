@@ -162,7 +162,7 @@
     "https-proxy-agent": "^7.0.6",
     "i18next": "^26.3.6",
     "js-yaml": "^4.3.2",
-    "kysely": "^0.28.17",
+    "kysely": "^0.29.7",
     "object-assign": "^4.1.1",
     "onnxruntime-node": "^1.21.0",
     "opencc-js": "^1.4.1",

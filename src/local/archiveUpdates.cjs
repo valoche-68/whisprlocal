@@ -118,10 +118,13 @@ async function stageArchive(file, base, version) {
   version = versionOf(version);
   const versions = path.join(base, "versions");
   await fs.mkdir(versions, { recursive: true, mode: 0o700 });
-  const target = path.join(versions, version);
+  let target = path.join(versions, version);
   try {
     await fs.access(target);
-    throw new Error("Version already staged; remove it explicitly before retrying");
+    // A crash can leave a staged version after its in-memory state is lost.
+    // Re-extract the verified archive to a fresh location; never trust or
+    // overwrite the old directory, which may also be a rollback installation.
+    target = path.join(versions, `${version}-${crypto.randomUUID()}`);
   } catch (e) {
     if (e.code !== "ENOENT") throw e;
   }

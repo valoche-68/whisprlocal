@@ -851,6 +851,23 @@ class WhisperManager {
 
     if (fs.existsSync(modelPath)) {
       const stats = await fsPromises.stat(modelPath);
+      if (this.currentDownloadProcess?.model === modelName)
+        return {
+          model: modelName,
+          success: false,
+          error: "Cancel the model download before deleting it",
+        };
+      if (!this.serverManager.isRemote && this.serverManager.modelPath === modelPath) {
+        if (this.serverManager.activeTranscriptions || this.serverManager.startupPromise)
+          return {
+            model: modelName,
+            success: false,
+            error: "Wait for the active transcription to finish before deleting this model",
+          };
+        // Unlinking a memory-mapped model alone retains disk blocks until the
+        // engine closes it, especially when automatic unloading is disabled.
+        await this.stopServer();
+      }
       await fsPromises.unlink(modelPath);
       return {
         model: modelName,
@@ -872,6 +889,21 @@ class WhisperManager {
     try {
       if (!fs.existsSync(modelsDir)) {
         return { success: true, deleted_count: 0, freed_bytes: 0, freed_mb: 0 };
+      }
+
+      if (this.currentDownloadProcess)
+        return { success: false, error: "Cancel the model download before deleting models" };
+      if (
+        !this.serverManager.isRemote &&
+        this.serverManager.modelPath &&
+        path.dirname(this.serverManager.modelPath) === modelsDir
+      ) {
+        if (this.serverManager.activeTranscriptions || this.serverManager.startupPromise)
+          return {
+            success: false,
+            error: "Wait for the active transcription to finish before deleting models",
+          };
+        await this.stopServer();
       }
 
       const files = await fsPromises.readdir(modelsDir);

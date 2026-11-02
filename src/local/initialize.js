@@ -32,6 +32,9 @@ for (const key of [
   "telemetryEnabled",
   "isSignedIn",
   "allowOpenAIFallback",
+  // Screen-aware inference is not implemented by this local edition.
+  "voiceAgentScreenContext",
+  "useDictationAgentVisionModel",
 ])
   localStorage.setItem(key, "false");
 localStorage.setItem("authenticationSkipped", "true");

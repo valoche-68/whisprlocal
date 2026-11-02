@@ -119,7 +119,11 @@ export function useModelDownload({
   useEffect(() => {
     const handleModelsCleared = () => onModelsClearedRef.current?.();
     window.addEventListener("openwhispr-models-cleared", handleModelsCleared);
-    return () => window.removeEventListener("openwhispr-models-cleared", handleModelsCleared);
+    window.addEventListener(LOCAL_MODELS_CHANGED_EVENT, handleModelsCleared);
+    return () => {
+      window.removeEventListener("openwhispr-models-cleared", handleModelsCleared);
+      window.removeEventListener(LOCAL_MODELS_CHANGED_EVENT, handleModelsCleared);
+    };
   }, []);
 
   const updateDownload = useCallback(
@@ -412,6 +416,8 @@ export function useModelDownload({
       try {
         if (modelType === "whisper") {
           const result = await window.electronAPI?.deleteWhisperModel(modelId);
+          if (!result?.success) throw new Error(result?.error || "Model deletion failed");
+          clearMissingLocalModelSelections((id) => id !== modelId, "whisper");
           if (result?.success) {
             toast({
               title: t("hooks.modelDownload.modelDeleted.title"),
@@ -422,6 +428,8 @@ export function useModelDownload({
           }
         } else if (modelType === "parakeet") {
           const result = await window.electronAPI?.deleteParakeetModel(modelId);
+          if (!result?.success) throw new Error(result?.error || "Model deletion failed");
+          clearMissingLocalModelSelections((id) => id !== modelId, "parakeet");
           if (result?.success) {
             toast({
               title: t("hooks.modelDownload.modelDeleted.title"),

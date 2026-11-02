@@ -65,7 +65,11 @@ test("unpacked upgrade stages, switches and rolls back without touching the prof
   await rollback(base);
   assert.equal(await fs.realpath(path.join(base, "current")), old);
   assert.equal(await fs.readFile(path.join(profile, "settings.json"), "utf8"), "keep");
-  await assert.rejects(stageArchive(file, base, "0.1.1"), /already staged/);
+  const retried = await stageArchive(file, base, "0.1.1");
+  assert.notEqual(retried, target);
+  assert.equal(await fs.readFile(path.join(retried, "whisprlocal"), "utf8"), "#!/bin/sh\nexit 0\n");
+  assert.equal(await fs.realpath(path.join(base, "current")), old);
+  assert.equal(await fs.realpath(path.join(base, "previous")), target);
   await assert.rejects(switchVersion(base, temp), /outside/);
 });
 test("archive traversal and escaping links are refused", () => {

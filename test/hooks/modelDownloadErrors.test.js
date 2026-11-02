@@ -16,13 +16,13 @@ function deferred() {
   return { promise, resolve };
 }
 
-async function createDownloadRenderer(t, electronAPI) {
+async function createDownloadRenderer(t, electronAPI, windowOverrides = {}) {
   let root = null;
   t.after(async () => {
     if (root) await React.act(async () => root.unmount());
   });
   installBrowserGlobals(t, {
-    window: { electronAPI, dispatchEvent() {} },
+    window: { electronAPI, dispatchEvent() {}, ...windowOverrides },
   });
   const container = installHookDom(t);
   const vite = await createRendererServer(t, {
@@ -382,3 +382,56 @@ for (const modelType of ["whisper", "parakeet", "llm"]) {
     if (modelType !== "llm") assert.equal(download.downloadProgress.percentage, 42);
   });
 }
+
+test("one successful deletion refreshes all model consumers; failed deletions do not", async (t) => {
+  const listeners = new Map();
+  let success = true;
+  const renderer = await createDownloadRenderer(
+    t,
+    {
+      onWhisperDownloadProgress: () => () => {},
+      modelGetActiveDownloads: async () => [],
+      deleteWhisperModel: async () => ({ success, freed_mb: 1, error: "Busy" }),
+    },
+    {
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, new Set());
+        listeners.get(type).add(fn);
+      },
+      removeEventListener(type, fn) {
+        listeners.get(type)?.delete(fn);
+      },
+      dispatchEvent(event) {
+        for (const fn of listeners.get(event.type) || []) fn(event);
+      },
+    }
+  );
+  const { useModelDownload } = await renderer.vite.ssrLoadModule("/hooks/useModelDownload.ts");
+  let first,
+    refreshes = 0,
+    completed = 0;
+  const refresh = () => {
+    refreshes++;
+  };
+  function Harness() {
+    first = useModelDownload({ modelType: "whisper", onModelsCleared: refresh });
+    useModelDownload({ modelType: "whisper", onModelsCleared: refresh });
+    return null;
+  }
+  await renderer.render(Harness);
+  await React.act(async () =>
+    first.deleteModel("large", () => {
+      completed++;
+    })
+  );
+  assert.equal(refreshes, 2);
+  assert.equal(completed, 1);
+  success = false;
+  await React.act(async () =>
+    first.deleteModel("large", () => {
+      completed++;
+    })
+  );
+  assert.equal(refreshes, 2);
+  assert.equal(completed, 1);
+});

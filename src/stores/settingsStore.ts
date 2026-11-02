@@ -3427,13 +3427,24 @@ export function getSettings(): SettingsState {
  * pointing at a deleted model fails at inference time with an error the user has
  * no way to act on. Cleared rather than repointed so the picker asks again.
  */
-export function clearMissingLocalModelSelections(isInstalled: (modelId: string) => boolean): void {
+export function clearMissingLocalModelSelections(
+  isInstalled: (modelId: string) => boolean,
+  modelType: "llm" | "whisper" | "parakeet" = "llm"
+): void {
   const settings = useSettingsStore.getState() as unknown as Record<string, unknown>;
-  const staleKeys: string[] = findStaleLocalModelKeys(
-    Object.values(INFERENCE_SCOPES),
-    settings,
-    isInstalled
-  );
+  const speechKeys =
+    modelType === "whisper"
+      ? ["whisperModel", "meetingWhisperModel", "uploadWhisperModel", "fallbackWhisperModel"]
+      : ["parakeetModel", "meetingParakeetModel", "uploadParakeetModel"];
+  const staleKeys: string[] =
+    modelType === "llm"
+      ? findStaleLocalModelKeys(Object.values(INFERENCE_SCOPES), settings, isInstalled)
+      : speechKeys.filter(
+          (key) =>
+            typeof settings[key] === "string" &&
+            settings[key] &&
+            !isInstalled(settings[key] as string)
+        );
   for (const key of staleKeys) {
     setStringSetting(key as keyof SettingsState, "");
   }

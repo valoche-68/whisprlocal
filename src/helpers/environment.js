@@ -7,7 +7,11 @@ const { normalizeUiLanguage } = require("./i18nMain");
 const secretCrypto = require("./secretCrypto");
 const { BYOK_API_KEYS } = require("../config/secretKeys");
 
-const SECRET_KEYS = ["CUSTOM_TRANSCRIPTION_API_KEY", "CUSTOM_CLEANUP_API_KEY"];
+const SECRET_KEYS = [
+  ...BYOK_API_KEYS.map((k) => k.env),
+  "CUSTOM_TRANSCRIPTION_API_KEY",
+  "CUSTOM_CLEANUP_API_KEY",
+];
 
 const SECRET_KEY_SET = new Set(SECRET_KEYS);
 

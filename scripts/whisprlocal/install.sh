@@ -23,7 +23,7 @@ Comment=Local and self-hosted dictation
 Exec="$INSTALL_ROOT/current/whisprlocal"
 Icon=whisprlocal
 Type=Application
-Categories=Utility;Audio;
+Categories=AudioVideo;Audio;
 Terminal=false
 StartupWMClass=whisprlocal
 DESKTOP

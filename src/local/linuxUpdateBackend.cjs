@@ -19,7 +19,9 @@ class LinuxUpdateBackend extends EventEmitter {
       this.base = candidate;
       this.isManaged = true;
     }
-    this.deb = fs.existsSync("/var/lib/dpkg/info/whisprlocal.list");
+    // A separately installed Debian package must not redirect updates for the
+    // managed user installation that is actually running.
+    this.deb = !this.isManaged && fs.existsSync("/var/lib/dpkg/info/whisprlocal.list");
   }
   setFeedURL() {}
   async checkForUpdates() {

@@ -3,7 +3,7 @@ const test = require("node:test"),
   Module = require("node:module"),
   { EventEmitter } = require("node:events");
 const target = require.resolve("../../src/local/linuxUpdateBackend.cjs");
-function fixture(t) {
+function fixture(t, { managed = false, deb = false } = {}) {
   const original = Module._load,
     app = new EventEmitter(),
     calls = [];
@@ -16,6 +16,10 @@ function fixture(t) {
   Module._load = function (name, parent, ...args) {
     if (parent?.filename === target) {
       if (name === "electron") return { app, net: {} };
+      if (name === "node:fs")
+        return {
+          existsSync: (file) => (file === "/var/lib/dpkg/info/whisprlocal.list" ? deb : managed),
+        };
       if (name === "node:child_process")
         return {
           spawn: (...args) => {
@@ -33,11 +37,20 @@ function fixture(t) {
     delete require.cache[target];
   });
   const backend = new Backend();
+  const detected = { isManaged: backend.isManaged, deb: backend.deb };
   backend.base = "/tmp/managed";
   backend.staged = "/tmp/managed/versions/0.1.1";
   backend.deb = false;
-  return { backend, app, calls };
+  return { backend, app, calls, detected };
 }
+test("updates target the running managed installation even when Debian is also installed", (t) => {
+  const { detected } = fixture(t, { managed: true, deb: true });
+  assert.deepEqual(detected, { isManaged: true, deb: false });
+});
+test("a Debian installation still uses its package update path", (t) => {
+  const { detected } = fixture(t, { deb: true });
+  assert.deepEqual(detected, { isManaged: false, deb: true });
+});
 test("an explicitly installed archive launches one detached applier before quitting", (t) => {
   const { backend, calls } = fixture(t);
   backend.autoInstallOnAppQuit = true;

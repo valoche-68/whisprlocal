@@ -81,6 +81,69 @@ function scrubDatabase(db) {
       "analytics_clear_requests",
     ])
       if (tables.includes(table)) db.exec(`DELETE FROM "${table}"`);
+    // Upstream calls the device-owned space "private", not "personal".
+    // Move imported team content into it before dropping account attribution.
+    // Two accounts can have same-named default folders in one space, so give
+    // colliding folders unique names while preserving their IDs and contents.
+    if (tables.includes("spaces")) {
+      let privateSpace = db
+        .prepare("SELECT id FROM spaces WHERE kind='private' ORDER BY id LIMIT 1")
+        .get();
+      if (!privateSpace) {
+        const inserted = db
+          .prepare("INSERT INTO spaces (kind, name) VALUES ('private', 'Personal')")
+          .run();
+        privateSpace = { id: inserted.lastInsertRowid };
+      }
+      const privateIds = new Set(
+        db
+          .prepare("SELECT id FROM spaces WHERE kind='private'")
+          .all()
+          .map((row) => row.id)
+      );
+      if (tables.includes("folders")) {
+        const folders = db
+          .prepare("SELECT id, name, space_id, deleted_at FROM folders ORDER BY id")
+          .all();
+        const occupiedNames = new Set(folders.map((row) => row.name));
+        const assigned = new Set();
+        for (const folder of folders) {
+          if (folder.deleted_at) continue;
+          const targetSpace = privateIds.has(folder.space_id) ? folder.space_id : privateSpace.id;
+          const key = `${targetSpace}\0${folder.name}`;
+          if (!assigned.has(key)) {
+            assigned.add(key);
+            continue;
+          }
+          let name = `${folder.name} (imported ${folder.id})`;
+          while (occupiedNames.has(name)) name += "_";
+          occupiedNames.add(name);
+          assigned.add(`${targetSpace}\0${name}`);
+          db.prepare("UPDATE folders SET name=? WHERE id=?").run(name, folder.id);
+        }
+      }
+      for (const table of ["notes", "folders"])
+        if (tables.includes(table))
+          db.prepare(
+            `UPDATE "${table}" SET space_id=? WHERE space_id IS NULL OR space_id NOT IN (SELECT id FROM spaces WHERE kind='private')`
+          ).run(privateSpace.id);
+      if (tables.includes("agent_conversations")) {
+        db.prepare(
+          "UPDATE agent_conversations SET space_id=? WHERE space_id IS NOT NULL AND space_id NOT IN (SELECT id FROM spaces WHERE kind='private')"
+        ).run(privateSpace.id);
+        if (tables.includes("folders"))
+          db.exec(
+            "UPDATE agent_conversations SET space_id=(SELECT space_id FROM folders WHERE folders.id=agent_conversations.folder_id) WHERE folder_id IN (SELECT id FROM folders)"
+          );
+      }
+      db.exec("DELETE FROM spaces WHERE kind!='private'");
+      const cols = db
+        .prepare("PRAGMA table_info(spaces)")
+        .all()
+        .map((c) => c.name);
+      for (const col of ["cloud_team_id", "workspace_id", "cloud_space_id"])
+        if (cols.includes(col)) db.exec(`UPDATE spaces SET "${col}"=NULL`);
+    }
     for (const table of [
       "notes",
       "folders",
@@ -105,24 +168,6 @@ function scrubDatabase(db) {
       ])
         if (cols.includes(col)) db.exec(`UPDATE "${table}" SET "${col}"=NULL`);
       if (cols.includes("is_shared")) db.exec(`UPDATE "${table}" SET is_shared=0`);
-    }
-    // Team and account spaces are not an offline service. Local personal rows survive.
-    if (tables.includes("spaces")) {
-      const ids = db
-        .prepare("SELECT id FROM spaces WHERE kind != 'personal'")
-        .all()
-        .map((r) => r.id);
-      for (const id of ids)
-        for (const table of ["notes", "folders", "agent_conversations"])
-          if (tables.includes(table))
-            db.prepare(`UPDATE "${table}" SET space_id=NULL WHERE space_id=?`).run(id);
-      db.exec("DELETE FROM spaces WHERE kind != 'personal'");
-      const cols = db
-        .prepare("PRAGMA table_info(spaces)")
-        .all()
-        .map((c) => c.name);
-      for (const col of ["cloud_team_id", "workspace_id", "cloud_space_id"])
-        if (cols.includes(col)) db.exec(`UPDATE spaces SET "${col}"=NULL`);
     }
   })();
   db.exec("VACUUM");

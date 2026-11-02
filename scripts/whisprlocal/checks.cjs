@@ -8,6 +8,13 @@ const files = fs
     )
   )
   .map((f) => "test/helpers/" + f);
+files.push(
+  "test/helpers/settingsStoreSpeechDeletion.test.js",
+  "test/hooks/modelDownloadErrors.test.js",
+  "test/helpers/secretKeys.test.js",
+  "test/components/toneStyleSection.test.js",
+  "test/components/localDictationAgentSettings.test.js"
+);
 const os = require("node:os");
 const path = require("node:path");
 const cache = fs.mkdtempSync(path.join(os.tmpdir(), "whisprlocal-tests-"));

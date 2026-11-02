@@ -76,3 +76,20 @@ test("upstream conflicts create a blocking report and never resolve local featur
   );
   assert.equal(JSON.parse(fs.readFileSync(path.join(repo, "upstream.json"))).version, "1.0.0");
 });
+
+test("upstream migration works on a clean CI checkout without a configured Git identity", (t) => {
+  const repo = fixture(t, false);
+  for (const key of ["user.name", "user.email"]) {
+    const removed = spawnSync("git", ["config", "--unset", key], { cwd: repo });
+    assert.equal(removed.status, 0);
+  }
+  const script = require.resolve("../../scripts/whisprlocal/prepare-upstream.cjs");
+  const migrated = spawnSync(process.execPath, [script, "v1.1.0"], {
+    cwd: repo,
+    encoding: "utf8",
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+  });
+  assert.equal(migrated.status, 0, migrated.stderr);
+  assert.deepEqual(JSON.parse(migrated.stdout).conflicts, []);
+  assert.ok(fs.existsSync(path.join(repo, "improvement.txt")));
+});

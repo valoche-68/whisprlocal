@@ -55,6 +55,7 @@ export default function LocalModelPicker({
 }: LocalModelPickerProps) {
   const { t } = useTranslation();
   const [downloadedModels, setDownloadedModels] = useState<Set<string>>(new Set());
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const loadDownloadedModelsRequestRef = useRef(0);
 
   const knownModelIds = useMemo(
@@ -72,6 +73,7 @@ export default function LocalModelPicker({
       let downloaded = new Set<string>();
       if (modelType === "whisper") {
         const result = await window.electronAPI?.listWhisperModels();
+        if (!result?.success) return null;
         if (result?.success) {
           downloaded = new Set(
             result.models
@@ -81,6 +83,7 @@ export default function LocalModelPicker({
         }
       } else if (modelType === "parakeet") {
         const result = await window.electronAPI?.listParakeetModels();
+        if (!result?.success) return null;
         if (result?.success) {
           downloaded = new Set(
             result.models
@@ -90,6 +93,7 @@ export default function LocalModelPicker({
         }
       } else {
         const result = await window.electronAPI?.modelGetAll?.();
+        if (!Array.isArray(result)) return null;
         if (result && Array.isArray(result)) {
           downloaded = new Set(
             result
@@ -100,6 +104,7 @@ export default function LocalModelPicker({
       }
       if (requestId === loadDownloadedModelsRequestRef.current) {
         setDownloadedModels(downloaded);
+        setInventoryLoaded(true);
         return downloaded;
       }
       return null;
@@ -186,7 +191,7 @@ export default function LocalModelPicker({
 
   const activeModels = allModels.filter((model) => downloads[model.id]);
   const isModelDownloaded = (model: LocalModel) =>
-    downloadedModels.has(model.id) || model.isDownloaded || model.downloaded;
+    inventoryLoaded ? downloadedModels.has(model.id) : model.isDownloaded || model.downloaded;
   const listedProviders = providers.filter((provider) =>
     provider.models.some((model) =>
       isListedModel(model, model.id === selectedModel, isModelDownloaded(model))

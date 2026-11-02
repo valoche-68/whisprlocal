@@ -22,7 +22,8 @@ const DOWNLOAD_HOSTS = new Set([
 ]);
 const configured = new Set();
 function official(host) {
-  return /(^|\.)(openwhispr|openwhisper)\.com$/i.test(host);
+  // A trailing DNS dot denotes the same host and must not bypass the ban.
+  return /(^|\.)(openwhispr|openwhisper)\.com$/i.test(host.replace(/\.+$/, ""));
 }
 function isAllowed(value) {
   let url;

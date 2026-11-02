@@ -12,7 +12,8 @@ files.push(
   "test/helpers/settingsStoreSpeechDeletion.test.js",
   "test/hooks/modelDownloadErrors.test.js",
   "test/helpers/secretKeys.test.js",
-  "test/components/toneStyleSection.test.js"
+  "test/components/toneStyleSection.test.js",
+  "test/components/localDictationAgentSettings.test.js"
 );
 const os = require("node:os");
 const path = require("node:path");

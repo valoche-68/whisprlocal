@@ -88,6 +88,10 @@
   ],
   "extraResources": [
     {
+      "from": "LICENSE",
+      "to": "OPENWHISPR-LICENSE.txt"
+    },
+    {
       "from": "src/assets",
       "to": "src/assets",
       "filter": ["**/*", "!fonts/yowza/**"]

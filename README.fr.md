@@ -20,6 +20,8 @@ Whisper se décharge **cinq secondes après la fin complète de la transcription
 
 Aucun compte, connexion, abonnement, facturation, forfait, espace d’équipe ou synchronisation officielle. Aucun fournisseur d’IA cloud ni configuration de ses clés. Le MCP distant et la CLI cloud sont remplacés par des outils locaux. Les calendriers et connecteurs nécessitant un compte tiers sont retirés, sans prétendre les convertir en services locaux.
 
+Le contexte automatique par capture d’écran et le modèle de vision indépendant ne sont pas disponibles dans cette édition : le transport d’images n’est pas implémenté dans les routes locales/auto-hébergées de la base officielle. Les assistants textuels restent disponibles.
+
 La télémétrie et les envois de diagnostics sont supprimés, sans option de réactivation. Les statistiques conservées sur cet ordinateur restent disponibles. Le traitement d’images par l’assistant exige un modèle adapté ; la transcription de réunions en temps réel sur serveur auto-hébergé n’est pas fournie par la base 1.11.0.
 
 ## Plateforme prise en charge

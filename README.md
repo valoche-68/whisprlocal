@@ -27,7 +27,7 @@ Whisper unloads after the complete transcription finishes: **5 seconds by defaul
 | Model and GPU engine downloads                      | Account-based calendar and third-party connectors                |
 | Local usage statistics                              | Telemetry and diagnostic uploads, with no switch to restore them |
 
-Removing an integration does not turn it into a local service. Screen-aware assistant features require a model that supports the relevant input; self-hosted realtime meeting transcription is not provided by upstream 1.11.0.
+Removing an integration does not turn it into a local service. Automatic screenshot context and the independent vision-model override are unavailable in this edition: upstream's local/self-hosted route does not implement their image transport. Text assistants remain available. Self-hosted realtime meeting transcription is not provided by upstream 1.11.0.
 
 ## Supported platform
 

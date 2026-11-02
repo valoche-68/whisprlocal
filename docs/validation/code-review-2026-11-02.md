@@ -12,6 +12,8 @@ This review examined the independent edition's application wiring, local API/MCP
 - Managed archive installations retain their own update backend even when a Debian installation also exists.
 - Migration preserves private spaces, moves imported team content locally, and resolves same-name folder collisions before removing account identifiers. Note/folder IDs and relationships remain intact.
 - Bulk Whisper deletion stops an idle engine before unlinking its loaded model and refuses deletion while transcription or download is active.
+- Removed automatic screen-context/independent vision controls that only had a cloud-provider route in upstream. Startup clears inherited capture flags and onboarding cannot re-enable them. Text assistants remain available locally and on supported self-hosted servers.
+- Included the original MIT copyright and license notice in distributed application resources.
 
 The Debian uninstaller's existing model-removal behavior is deliberately retained at the user's explicit request. A migration must preserve shared model files before uninstalling the old package.
 

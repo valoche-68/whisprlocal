@@ -80,13 +80,15 @@ export default function IntegrationsView(props: Props): ReactElement {
                 openSkillRequest={props.openSkillRequest}
                 onOpenSkillRequestHandled={props.onOpenSkillRequestHandled}
               />
-            ) : section === "cli" ? (<CliPane title={t("whisprlocal.cliTitle")} command={command}/>) : (
+            ) : section === "cli" ? (
+              <CliPane title={t("whisprlocal.cliTitle")} command={command} />
+            ) : (
               <IntegrationsPane
                 title={t(`whisprlocal.${section}Title`)}
                 description={t(`whisprlocal.${section}Description`)}
               >
                 <p className="text-xs text-muted-foreground">{t("whisprlocal.appRequired")}</p>
-                
+
                 {section === "mcp" && (
                   <CopyBlock
                     value={JSON.stringify(

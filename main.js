@@ -139,6 +139,15 @@ if (process.platform === "linux" && process.env.XDG_SESSION_TYPE === "wayland") 
 // This allows XDG portals (e.g. PipeWire) to persist permissions across sessions.
 if (process.platform === "linux") {
   app.setDesktopName("whisprlocal.desktop");
+  // KDE/XWayland otherwise falls back to Electron's generic window icon.
+  app.on("browser-window-created", (_event, window) => {
+    const fs = require("node:fs");
+    const icon = [
+      path.join(process.resourcesPath || "", "src", "assets", "icon.png"),
+      path.join(__dirname, "src", "assets", "icon.png"),
+    ].find((candidate) => fs.existsSync(candidate));
+    if (icon) window.setIcon(icon);
+  });
 }
 
 // Group all windows under single taskbar entry on Windows
@@ -957,6 +966,11 @@ async function startApp() {
   ipcMain.handle("get-local-integration-info", () => {
     let command = process.env.APPIMAGE || process.execPath;
     if (command.endsWith("-app")) command = command.slice(0, -4);
+    if (!process.env.APPIMAGE) {
+      const base = path.resolve(path.dirname(process.execPath), "../..");
+      if (require("node:fs").existsSync(path.join(base, "install.json")))
+        command = path.join(base, "current", "whisprlocal");
+    }
     return { command };
   });
   cliBridge = new CliBridge(ipcHandlers);

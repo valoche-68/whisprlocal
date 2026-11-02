@@ -181,7 +181,7 @@ export default function LeaderboardShareDialog({
               void run("linkedin", async () => {
                 await copyImage();
                 const opened = await window.electronAPI.openExternal(
-                  "https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fopenwhispr.com"
+                  "https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgithub.com%2Fvaloche-68%2Fwhisprlocal"
                 );
                 if (!opened.success) throw new Error(opened.error || "Opening LinkedIn failed");
               })

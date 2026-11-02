@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { execFile } = require("node:child_process");
 const tar = require("tar");
 const REPO = "valoche-68/whisprlocal";
 function versionOf(tag) {
@@ -95,6 +96,25 @@ function safeEntry(entry) {
   return true;
 }
 async function stageArchive(file, base, version) {
+  // Electron virtualizes app.asar as a directory. Extract in an isolated Node
+  // process so disabling ASAR never affects the running application's imports.
+  if (process.versions.electron && !process.noAsar) {
+    return new Promise((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [path.join(__dirname, "stageUpdate.cjs"), file, base, version],
+        { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 600000, maxBuffer: 65536 },
+        (error, stdout, stderr) => {
+          if (error) return reject(new Error(stderr.trim() || error.message));
+          try {
+            resolve(JSON.parse(stdout).target);
+          } catch {
+            reject(new Error("Update staging helper returned an invalid result"));
+          }
+        }
+      );
+    });
+  }
   version = versionOf(version);
   const versions = path.join(base, "versions");
   await fs.mkdir(versions, { recursive: true, mode: 0o700 });
@@ -131,7 +151,7 @@ async function stageArchive(file, base, version) {
     if (root !== temp) await fs.rm(temp, { recursive: true, force: true });
     return target;
   } catch (e) {
-    await fs.rm(temp, { recursive: true, force: true });
+    await fs.rm(temp, { recursive: true, force: true }).catch(() => {});
     throw e;
   }
 }

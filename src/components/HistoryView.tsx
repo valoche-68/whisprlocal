@@ -247,7 +247,6 @@ export default function HistoryView({
 
         {/* With history, drop the day cards by one date row (pt-2 + text-sm line + pb-2.5) so
             the first one lines up with the first transcription. */}
-        
       </div>
     </div>
   );

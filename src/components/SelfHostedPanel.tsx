@@ -1,3 +1,4 @@
+import { useSettingsStore } from "../stores/settingsStore";
 import { useTranslation } from "react-i18next";
 import { ORUKEET_MODEL } from "../helpers/dictationStreamingRouting";
 import { useConnectionAutoCheck } from "../hooks/useConnectionAutoCheck";
@@ -23,23 +24,25 @@ export default function SelfHostedPanel({
   onModelChange,
 }: SelfHostedPanelProps) {
   const { t } = useTranslation();
+  const serverToken = useSettingsStore((s) => s.customTranscriptionApiKey);
+  const setServerToken = useSettingsStore((s) => s.setCustomTranscriptionApiKey);
+  const apiKey = service === "transcription" ? serverToken : "";
   const urlHold = useFocusHold();
   const editing = useFocusHold();
   const visible = usePanelVisible();
   const trimmedModel = (model ?? "").trim();
   // The address and model save as they are typed.
   const delayMs = useTypingPause({
-    typed: `${url}\n${model ?? ""}`,
+    typed: `${url}\n${model ?? ""}\n${apiKey}`,
     context: JSON.stringify([service, visible]),
     held: editing.held,
   });
   const check = useConnectionAutoCheck({
-    config: { scope: service, provider: "custom", baseUrl: url, model },
+    config: { scope: service, provider: "custom", baseUrl: url, model, apiKey },
     ready:
       Boolean(onModelChange && url.trim() && trimmedModel) &&
-      // The app sends this model's server a key this panel has no field for, so a check
-      // could only ask without it.
-      trimmedModel !== ORUKEET_MODEL &&
+      // Orukeet requires an explicitly configured server credential.
+      (trimmedModel !== ORUKEET_MODEL || Boolean(apiKey)) &&
       // A hidden panel is not ready to ask; a shown one asks again, and the main process
       // answers a check it remembers at once.
       visible,
@@ -80,7 +83,7 @@ export default function SelfHostedPanel({
             aria-label={t("common.model")}
             check={check}
             invalidOn="modelNotFound"
-            // This server is sent no key, so a refusal means it wants one.
+            // A refusal means the server requires a valid credential.
             failureReason={
               check.failure?.errorCode === "credentialsRejected"
                 ? t("reasoning.custom.endpointUnauthorized")
@@ -89,6 +92,21 @@ export default function SelfHostedPanel({
             value={model ?? ""}
             onChange={(e) => onModelChange(e.target.value)}
             placeholder="Whisper-Large-v3-Turbo"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+      )}
+      {service === "transcription" && (
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-foreground">
+            {t("whisprlocal.serverToken")}
+          </label>
+          <ProviderCheckField
+            type="password"
+            aria-label={t("whisprlocal.serverToken")}
+            value={serverToken}
+            onChange={(e) => setServerToken(e.target.value)}
             autoComplete="off"
             spellCheck={false}
           />

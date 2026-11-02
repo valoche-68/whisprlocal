@@ -1,14 +1,11 @@
 import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
 import { CopyableCommand } from "../ui/CopyableCommand";
 import { SectionLabel, SettingsPanel, SettingsPanelRow } from "../ui/SettingsSection";
 import { IntegrationsPane } from "./IntegrationsPane";
 
 const CLI_DOCS_URL = "https://github.com/valoche-68/whisprlocal#cli-api-and-mcp";
-const INSTALL_CMD = "whisprlocal --cli --help";
-const LOCAL_EXAMPLE = "whisprlocal --cli notes list";
 
 interface CliPaneProps {
   title: string;
@@ -49,8 +46,6 @@ export function CliPane({ title, command = "whisprlocal" }: CliPaneProps): React
             <CopyableCommand command={`${executable} --cli notes list`} />
           </SettingsPanelRow>
         </SettingsPanel>
-
-        
       </div>
     </IntegrationsPane>
   );

@@ -5568,6 +5568,7 @@
     "apiDescription": "An authenticated bridge to the running application.",
     "appRequired": "WhisprLocal must be open. No account or cloud provider key is required.",
     "apiSecurity": "The bridge listens on 127.0.0.1 only. Its technical token is stored privately in ~/.whisprlocal/cli-bridge.json (mode 600). The bundled CLI and MCP read it automatically.",
-    "localOperations": "Available: notes, folders, dictionary, snippets, transcription history and local audio-file transcription. Changes made by an MCP client affect your local data."
+    "localOperations": "Available: notes, folders, dictionary, snippets, transcription history and local audio-file transcription. Changes made by an MCP client affect your local data.",
+    "serverToken": "Server token (optional)"
   }
 }

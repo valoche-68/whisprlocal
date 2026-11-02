@@ -10,7 +10,7 @@ const load = () => import("../../src/helpers/linuxAutostart.js");
 // would leak a bogus value into every later test in this file.
 const MANAGED_ENV = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_DATA_DIRS", "APPIMAGE", "NODE_ENV"];
 
-const ICON_THEME_SUBPATH = path.join("icons", "hicolor", "256x256", "apps", "open-whispr.png");
+const ICON_THEME_SUBPATH = path.join("icons", "hicolor", "256x256", "apps", "whisprlocal.png");
 
 function setEnv(name, value) {
   if (value === undefined) delete process.env[name];
@@ -54,8 +54,8 @@ test(
   withTmpXdgDirs(async () => {
     const { resolveExecutablePath } = await load();
 
-    process.env.APPIMAGE = "/home/user/Applications/OpenWhispr.AppImage";
-    assert.equal(resolveExecutablePath(), "/home/user/Applications/OpenWhispr.AppImage");
+    process.env.APPIMAGE = "/home/user/Applications/WhisprLocal.AppImage";
+    assert.equal(resolveExecutablePath(), "/home/user/Applications/WhisprLocal.AppImage");
   })
 );
 
@@ -78,9 +78,9 @@ test(
 
     const installDir = path.join(root, "opt");
     fs.mkdirSync(installDir, { recursive: true });
-    fs.writeFileSync(path.join(installDir, "open-whispr"), "#!/bin/bash\n");
-    withExecPath(path.join(installDir, "open-whispr-app"), () => {
-      assert.equal(resolveExecutablePath(), path.join(installDir, "open-whispr"));
+    fs.writeFileSync(path.join(installDir, "whisprlocal"), "#!/bin/bash\n");
+    withExecPath(path.join(installDir, "whisprlocal-app"), () => {
+      assert.equal(resolveExecutablePath(), path.join(installDir, "whisprlocal"));
     });
   })
 );
@@ -90,7 +90,7 @@ test(
   withTmpXdgDirs(async (root) => {
     const { resolveExecutablePath } = await load();
 
-    const orphan = path.join(root, "opt", "open-whispr-app");
+    const orphan = path.join(root, "opt", "whisprlocal-app");
     fs.mkdirSync(path.dirname(orphan), { recursive: true });
     withExecPath(orphan, () => {
       assert.equal(resolveExecutablePath(), orphan);
@@ -103,9 +103,9 @@ test(
   withTmpXdgDirs(async () => {
     const { buildDesktopFileContents } = await load();
 
-    const contents = buildDesktopFileContents("/a/b/OpenWhispr.AppImage", "open-whispr");
-    assert.match(contents, /^Exec="\/a\/b\/OpenWhispr\.AppImage" --hidden$/m);
-    assert.match(contents, /^Icon=open-whispr$/m);
+    const contents = buildDesktopFileContents("/a/b/WhisprLocal.AppImage", "whisprlocal");
+    assert.match(contents, /^Exec="\/a\/b\/WhisprLocal\.AppImage" --hidden$/m);
+    assert.match(contents, /^Icon=whisprlocal$/m);
     assert.match(contents, /^X-GNOME-Autostart-enabled=true$/m);
   })
 );
@@ -117,7 +117,7 @@ test(
   withTmpXdgDirs(async () => {
     const { setAutostartEnabled, syncAutostartEntry, getDesktopFilePath } = await load();
 
-    process.env.APPIMAGE = "/apps/OpenWhispr.AppImage";
+    process.env.APPIMAGE = "/apps/WhisprLocal.AppImage";
     setAutostartEnabled(true);
     assert.match(fs.readFileSync(getDesktopFilePath(), "utf8"), /^Exec=.* --hidden$/m);
 
@@ -132,10 +132,10 @@ test(
   withTmpXdgDirs(async () => {
     const { syncAutostartEntry, getDesktopFilePath } = await load();
 
-    process.env.APPIMAGE = "/apps/OpenWhispr.AppImage";
+    process.env.APPIMAGE = "/apps/WhisprLocal.AppImage";
     writeEntry(
       getDesktopFilePath(),
-      '[Desktop Entry]\nType=Application\nExec="/apps/OpenWhispr.AppImage"\n'
+      '[Desktop Entry]\nType=Application\nExec="/apps/WhisprLocal.AppImage"\n'
     );
 
     assert.equal(syncAutostartEntry(), true);
@@ -148,7 +148,7 @@ test(
   withTmpXdgDirs(async () => {
     const { buildDesktopFileContents } = await load();
 
-    const contents = buildDesktopFileContents("/a/b/OpenWhispr.AppImage", null);
+    const contents = buildDesktopFileContents("/a/b/WhisprLocal.AppImage", null);
     assert.doesNotMatch(contents, /^Icon=/m);
   })
 );
@@ -160,10 +160,10 @@ test(
   withTmpXdgDirs(async () => {
     const { buildDesktopFileContents } = await load();
 
-    const contents = buildDesktopFileContents('/home/o"neill/$HOME/`app`\\v/OpenWhispr', null);
+    const contents = buildDesktopFileContents('/home/o"neill/$HOME/`app`\\v/WhisprLocal', null);
     assert.match(
       contents,
-      /^Exec="\/home\/o\\"neill\/\\\$HOME\/\\`app\\`\\\\\\\\v\/OpenWhispr" --hidden$/m
+      /^Exec="\/home\/o\\"neill\/\\\$HOME\/\\`app\\`\\\\\\\\v\/WhisprLocal" --hidden$/m
     );
   })
 );
@@ -176,7 +176,7 @@ test(
     writeEntry(path.join(root, "system-data", ICON_THEME_SUBPATH), "pretend png");
 
     setAutostartEnabled(true);
-    assert.match(fs.readFileSync(getDesktopFilePath(), "utf8"), /^Icon=open-whispr$/m);
+    assert.match(fs.readFileSync(getDesktopFilePath(), "utf8"), /^Icon=whisprlocal$/m);
     assert.ok(!fs.existsSync(path.join(root, "data", ICON_THEME_SUBPATH)));
   })
 );
@@ -230,7 +230,7 @@ test(
 
     writeEntry(
       getDesktopFilePath(),
-      "[Desktop Entry]\nType=Application\nName=OpenWhispr\nX-GNOME-Autostart-enabled=false\n"
+      "[Desktop Entry]\nType=Application\nName=WhisprLocal\nX-GNOME-Autostart-enabled=false\n"
     );
     assert.equal(isAutostartEnabled(), false);
   })
@@ -243,7 +243,7 @@ test(
 
     writeEntry(
       getDesktopFilePath(),
-      "[Desktop Entry]\nType=Application\nName=OpenWhispr\nHidden=TRUE\n"
+      "[Desktop Entry]\nType=Application\nName=WhisprLocal\nHidden=TRUE\n"
     );
     assert.equal(isAutostartEnabled(), false);
   })
@@ -280,14 +280,14 @@ test(
   withTmpXdgDirs(async () => {
     const { setAutostartEnabled, syncAutostartEntry, getDesktopFilePath } = await load();
 
-    process.env.APPIMAGE = "/old/path/OpenWhispr.AppImage";
+    process.env.APPIMAGE = "/old/path/WhisprLocal.AppImage";
     setAutostartEnabled(true);
 
-    process.env.APPIMAGE = "/new/path/OpenWhispr-1.9.0.AppImage";
+    process.env.APPIMAGE = "/new/path/WhisprLocal-1.9.0.AppImage";
     assert.equal(syncAutostartEntry(), true);
 
     const contents = fs.readFileSync(getDesktopFilePath(), "utf8");
-    assert.match(contents, /^Exec="\/new\/path\/OpenWhispr-1\.9\.0\.AppImage" --hidden$/m);
+    assert.match(contents, /^Exec="\/new\/path\/WhisprLocal-1\.9\.0\.AppImage" --hidden$/m);
   })
 );
 
@@ -296,7 +296,7 @@ test(
   withTmpXdgDirs(async () => {
     const { setAutostartEnabled, syncAutostartEntry, getDesktopFilePath } = await load();
 
-    process.env.APPIMAGE = "/path/OpenWhispr.AppImage";
+    process.env.APPIMAGE = "/path/WhisprLocal.AppImage";
     setAutostartEnabled(true);
     const before = fs.statSync(getDesktopFilePath()).mtimeMs;
 
@@ -310,10 +310,10 @@ test(
   withTmpXdgDirs(async () => {
     const { syncAutostartEntry, isAutostartEnabled, getDesktopFilePath } = await load();
 
-    process.env.APPIMAGE = "/new/path/OpenWhispr.AppImage";
+    process.env.APPIMAGE = "/new/path/WhisprLocal.AppImage";
     writeEntry(
       getDesktopFilePath(),
-      '[Desktop Entry]\nType=Application\nExec="/old/path/OpenWhispr.AppImage"\nX-GNOME-Autostart-enabled=false\n'
+      '[Desktop Entry]\nType=Application\nExec="/old/path/WhisprLocal.AppImage"\nX-GNOME-Autostart-enabled=false\n'
     );
 
     assert.equal(syncAutostartEntry(), false);
@@ -337,7 +337,7 @@ test(
   withTmpXdgDirs(async () => {
     const { setAutostartEnabled, syncAutostartEntry, getDesktopFilePath } = await load();
 
-    process.env.APPIMAGE = "/installed/OpenWhispr.AppImage";
+    process.env.APPIMAGE = "/installed/WhisprLocal.AppImage";
     setAutostartEnabled(true);
 
     process.env.NODE_ENV = "development";
@@ -345,6 +345,6 @@ test(
     assert.equal(syncAutostartEntry(), false);
 
     const contents = fs.readFileSync(getDesktopFilePath(), "utf8");
-    assert.match(contents, /^Exec="\/installed\/OpenWhispr\.AppImage" --hidden$/m);
+    assert.match(contents, /^Exec="\/installed\/WhisprLocal\.AppImage" --hidden$/m);
   })
 );

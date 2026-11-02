@@ -9,7 +9,10 @@ const DOWNLOAD_HOSTS = new Set([
   "github-releases.githubusercontent.com",
   "huggingface.co",
   "hf.co",
-  "us.aws.cdn.hf.co", "eu.aws.cdn.hf.co", "us.gcp.cdn.hf.co", "cdn-lfs.hf.co",
+  "us.aws.cdn.hf.co",
+  "eu.aws.cdn.hf.co",
+  "us.gcp.cdn.hf.co",
+  "cdn-lfs.hf.co",
   "cdn-lfs.huggingface.co",
   "cdn-lfs-us-1.huggingface.co",
   "cdn-lfs-eu-1.huggingface.co",
@@ -51,7 +54,28 @@ function setConfigured(urls) {
     }
   }
 }
+function audit(url, allowed, transport) {
+  const file = process.env.WHISPRLOCAL_NETWORK_AUDIT;
+  if (!file) return;
+  try {
+    const target = new URL(String(url));
+    if (["http:", "https:", "ws:", "wss:"].includes(target.protocol))
+      fs.appendFileSync(
+        file,
+        JSON.stringify({
+          time: new Date().toISOString(),
+          origin: target.origin,
+          allowed,
+          transport,
+        }) + "\n",
+        { mode: 0o600 }
+      );
+  } catch {
+    /* Auditing must not affect the request. No paths, query strings or credentials. */
+  }
+}
 function assertAllowed(url) {
+  audit(url, isAllowed(String(url)), "node");
   if (!isAllowed(String(url)))
     throw Object.assign(new Error("WhisprLocal blocked an unconfigured network destination"), {
       code: "NETWORK_POLICY",
@@ -92,7 +116,11 @@ function install({ app, session }) {
     };
   }
   const protect = (s) =>
-    s.webRequest.onBeforeRequest((details, done) => done({ cancel: !isAllowed(details.url) }));
+    s.webRequest.onBeforeRequest((details, done) => {
+      const allowed = isAllowed(details.url);
+      audit(details.url, allowed, "electron");
+      done({ cancel: !allowed });
+    });
   app.on("session-created", protect);
   app.whenReady().then(() => {
     protect(session.defaultSession);

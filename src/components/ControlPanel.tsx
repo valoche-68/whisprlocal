@@ -1147,7 +1147,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                     onNewNote={handleNewNote}
                     onNewChat={agentAllowedByPolicy ? () => setActiveView("chat") : undefined}
                   />
-                  
                 </div>
               }
             />

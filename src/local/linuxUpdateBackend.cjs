@@ -8,6 +8,11 @@ class LinuxUpdateBackend extends EventEmitter {
   constructor() {
     super();
     this.autoInstallOnAppQuit = false;
+    this.isApplying = false;
+    app.on("before-quit", () => {
+      if (this.autoInstallOnAppQuit && this.staged && !this.deb && !this.isApplying)
+        this.launchApplier();
+    });
     this.isManaged = false;
     const candidate = path.resolve(path.dirname(process.execPath), "../..");
     if (fs.existsSync(path.join(candidate, "install.json"))) {
@@ -68,13 +73,18 @@ class LinuxUpdateBackend extends EventEmitter {
       });
       return;
     }
+    this.launchApplier();
+    app.quit();
+  }
+  launchApplier() {
+    if (this.isApplying) return;
+    this.isApplying = true;
     const child = spawn(
       process.execPath,
       [path.join(__dirname, "applyUpdate.cjs"), String(process.pid), this.base, this.staged],
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, detached: true, stdio: "ignore" }
     );
     child.unref();
-    app.quit();
   }
 }
 module.exports = LinuxUpdateBackend;

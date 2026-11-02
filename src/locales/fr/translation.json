@@ -5586,6 +5586,7 @@
     "apiDescription": "Un pont authentifié vers l’application ouverte.",
     "appRequired": "WhisprLocal doit être ouvert. Aucun compte ni clé de fournisseur cloud n’est nécessaire.",
     "apiSecurity": "Le pont écoute uniquement sur 127.0.0.1. Son jeton technique est conservé dans un fichier privé : ~/.whisprlocal/cli-bridge.json (mode 600). La CLI et le MCP intégrés le lisent automatiquement.",
-    "localOperations": "Opérations disponibles : notes, dossiers, dictionnaire, extraits, historique et transcription locale de fichiers audio. Les modifications d’un client MCP affectent vos données locales."
+    "localOperations": "Opérations disponibles : notes, dossiers, dictionnaire, extraits, historique et transcription locale de fichiers audio. Les modifications d’un client MCP affectent vos données locales.",
+    "serverToken": "Jeton du serveur (facultatif)"
   }
 }

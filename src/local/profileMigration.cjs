@@ -201,7 +201,11 @@ async function migrate({
     await fs.mkdir(target, { mode: 0o700 });
     createdTarget = true;
     for (const entry of await fs.readdir(staged)) {
-      await fs.cp(path.join(staged, entry), path.join(target, entry), { recursive: true, errorOnExist: true, force: false });
+      await fs.cp(path.join(staged, entry), path.join(target, entry), {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
     }
     await fs.chmod(target, 0o700);
     const report = {

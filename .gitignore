@@ -328,3 +328,6 @@ src/assets/fonts/yowza/*.otf
 
 # Local release staging output (never source)
 /dist-final/
+
+/dist-test/
+/dist-release/

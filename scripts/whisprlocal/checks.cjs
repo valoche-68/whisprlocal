@@ -2,7 +2,11 @@ const fs = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const files = fs
   .readdirSync("test/helpers")
-  .filter((f) => /^(whisper|llama|gpu|cliBridge|localServer|clipboardRestore).*\.test\.js$/.test(f))
+  .filter((f) =>
+    /^(whisper|llama|gpu|cliBridge|localServer|clipboardRestore|transcriptionRoute|selfHosted|transcriptionAuth|linuxAutostart).*\.test\.js$/.test(
+      f
+    )
+  )
   .map((f) => "test/helpers/" + f);
 const os = require("node:os");
 const path = require("node:path");

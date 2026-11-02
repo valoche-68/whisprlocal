@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const tar = require("tar");
 const crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
 const {
   safeEntry,
   stageArchive,
@@ -13,6 +14,34 @@ const {
   releaseInfo,
   downloadVerified,
 } = require("../../src/local/archiveUpdates.cjs");
+test("real ASAR archives remain files when an Electron host stages an update", async (t) => {
+  const raw = process.versions.electron ? require("original-fs").promises : fs;
+  const temp = await raw.mkdtemp(path.join(os.tmpdir(), "wl-asar-update-"));
+  t.after(() => raw.rm(temp, { recursive: true, force: true }));
+  const source = path.join(temp, "source");
+  const content = path.join(temp, "asar-content");
+  await fs.mkdir(source);
+  await fs.mkdir(content);
+  await fs.writeFile(path.join(content, "fixture.txt"), "application content");
+  await fs.writeFile(path.join(source, "whisprlocal"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const archive = path.join(source, "app.asar");
+  execFileSync(
+    process.execPath,
+    [
+      "-e",
+      "process.noAsar = true; require(process.argv[1]).createPackage(process.argv[2], process.argv[3]).catch(e => { console.error(e); process.exitCode = 1; });",
+      require.resolve("@electron/asar"),
+      content,
+      archive,
+    ],
+    { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }
+  );
+  const file = path.join(temp, "update.tar.gz");
+  execFileSync("tar", ["-czf", file, "-C", source, "."]);
+  const target = await stageArchive(file, path.join(temp, "install"), "0.1.1");
+  assert.equal((await raw.stat(path.join(target, "app.asar"))).isFile(), true);
+  assert.deepEqual(await raw.readFile(path.join(target, "app.asar")), await raw.readFile(archive));
+});
 test("unpacked upgrade stages, switches and rolls back without touching the profile", async (t) => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "wl-update-"));
   t.after(() => fs.rm(temp, { recursive: true, force: true }));

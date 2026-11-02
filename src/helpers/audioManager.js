@@ -2749,6 +2749,13 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
 
   async getAPIKey() {
     const s = getSettings();
+    if (s.transcriptionMode === "self-hosted") {
+      return (
+        s.customTranscriptionApiKey?.trim() ||
+        (await window.electronAPI.getCustomTranscriptionKey?.()) ||
+        null
+      );
+    }
     if (shouldSkipTranscriptionApiKey(s)) {
       return null;
     }

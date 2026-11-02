@@ -10256,13 +10256,15 @@ class IPCHandlers {
                 providerContentType(realByok),
                 { model: route.model, language: route.language }
               );
-              const data = await postMultipart(
-                new URL(route.endpoint),
-                body,
-                boundary,
-                {},
-                { signal }
-              );
+              const serverToken = (
+                apiKey ||
+                this.environmentManager.getCustomTranscriptionKey() ||
+                ""
+              ).trim();
+              const headers = serverToken ? { Authorization: `Bearer ${serverToken}` } : {};
+              const data = await postMultipart(new URL(route.endpoint), body, boundary, headers, {
+                signal,
+              });
               if (data.statusCode !== 200) {
                 debugLogger.warn("Self-hosted file transcription failed", {
                   status: data.statusCode,

@@ -1,4 +1,3 @@
-import { EnterpriseAudioSettings } from "./settings/EnterpriseAudioSettings";
 import WhisperIdleSettings from "./settings/WhisperIdleSettings";
 import { version as upstreamVersion } from "../../upstream.json";
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -758,7 +757,7 @@ function TranscriptionSection({
     <div className="space-y-4">
       {errorCard}
       {managedCard}
-      <EnterpriseAudioSettings />
+
       {!errorCard && !managedCard && (
         <>
           {enterpriseTranscriptionSetupMode === "manual" && managedAvailable.kind === "managed" && (
@@ -2257,20 +2256,6 @@ export default function SettingsPage({
                     <Toggle
                       checked={notifyMeetingDetection}
                       onChange={setNotifyMeetingDetection}
-                      disabled={!notificationsEnabled}
-                    />
-                  </SettingsRow>
-                </SettingsPanelRow>
-                <SettingsPanelRow>
-                  <SettingsRow
-                    label={t("settingsPage.general.notifications.calendarReminders")}
-                    description={t(
-                      "settingsPage.general.notifications.calendarRemindersDescription"
-                    )}
-                  >
-                    <Toggle
-                      checked={notifyCalendarReminders}
-                      onChange={setNotifyCalendarReminders}
                       disabled={!notificationsEnabled}
                     />
                   </SettingsRow>

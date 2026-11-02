@@ -13,8 +13,6 @@ import historyEmptyLight from "../assets/empty-states/home-history-light.svg";
 import historyEmptyDark from "../assets/empty-states/home-history-dark.svg";
 import type { TranscriptionItem as TranscriptionItemType } from "../types/electron";
 import { formatDateGroup } from "../utils/dateFormatting";
-import { useUpcomingEvents } from "../hooks/useUpcomingEvents";
-import UpcomingMeetings from "./UpcomingMeetings";
 import { useSettingsStore } from "../stores/settingsStore";
 import { effectiveLocalHistoryEnabled } from "../stores/policyRules";
 import { usePolicyStore } from "../stores/policyStore";
@@ -66,7 +64,6 @@ export default function HistoryView({
   const dataRetentionEnabled = usePolicyStore((policyState) =>
     effectiveLocalHistoryEnabled(policyState, personalDataRetentionEnabled)
   );
-  const { events, isLoading: eventsLoading, isConnected } = useUpcomingEvents();
   const toneStylePrompt = useToneStylePrompt();
   const firstName = userName?.trim().split(/\s+/)[0];
   const hasHistory = history.length > 0;
@@ -250,14 +247,7 @@ export default function HistoryView({
 
         {/* With history, drop the day cards by one date row (pt-2 + text-sm line + pb-2.5) so
             the first one lines up with the first transcription. */}
-        <div className={cn("hidden w-80 shrink-0 md:block", history.length > 0 && "pt-[2.375rem]")}>
-          <UpcomingMeetings
-            events={events}
-            isLoading={eventsLoading}
-            isConnected={isConnected}
-            onConnectCalendar={onOpenIntegrations}
-          />
-        </div>
+        
       </div>
     </div>
   );

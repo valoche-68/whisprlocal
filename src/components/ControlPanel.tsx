@@ -64,7 +64,6 @@ import { navigateMeetingNotification } from "./meetingNotificationNavigation";
 import MeetingRecordingMount from "./MeetingRecordingMount";
 import MeetingRecordingPill from "./notes/MeetingRecordingPill";
 import NewNoteMenu from "./notes/NewNoteMenu";
-import ProfileMenu from "./ProfileMenu";
 
 import { getCachedPlatform } from "../utils/platform";
 import { isAccessibilitySkipped } from "../utils/permissions";
@@ -1148,14 +1147,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                     onNewNote={handleNewNote}
                     onNewChat={agentAllowedByPolicy ? () => setActiveView("chat") : undefined}
                   />
-                  <ProfileMenu
-                    onOpenSettings={(section) => {
-                      setSettingsSection(section);
-                      setShowSettings(true);
-                    }}
-                    onOpenReferrals={() => setShowReferrals(true)}
-                    onSignOut={requestSignOut}
-                  />
+                  
                 </div>
               }
             />

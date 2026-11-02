@@ -1,3 +1,4 @@
+import { CliPane } from "./integrations/CliPane";
 import { useEffect, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { IntegrationsNav } from "./integrations/IntegrationsNav";
@@ -79,20 +80,13 @@ export default function IntegrationsView(props: Props): ReactElement {
                 openSkillRequest={props.openSkillRequest}
                 onOpenSkillRequestHandled={props.onOpenSkillRequestHandled}
               />
-            ) : (
+            ) : section === "cli" ? (<CliPane title={t("whisprlocal.cliTitle")} command={command}/>) : (
               <IntegrationsPane
                 title={t(`whisprlocal.${section}Title`)}
                 description={t(`whisprlocal.${section}Description`)}
               >
                 <p className="text-xs text-muted-foreground">{t("whisprlocal.appRequired")}</p>
-                {section === "cli" && (
-                  <>
-                    <CopyBlock
-                      value={`${quoted} --cli notes list\n${quoted} --cli transcribe file /path/audio.wav --language fr`}
-                    />
-                    <CopyBlock value={`${quoted} --cli --help`} />
-                  </>
-                )}
+                
                 {section === "mcp" && (
                   <CopyBlock
                     value={JSON.stringify(

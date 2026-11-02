@@ -4394,7 +4394,7 @@
     },
     "cli": {
       "description": "Give your assistant access to your notes from the terminal.",
-      "installLabel": "Install",
+      "installLabel": "CLI bundled with the application",
       "viewPlans": "View Plans",
       "local": {
         "label": "Local",

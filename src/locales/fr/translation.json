@@ -4412,7 +4412,7 @@
     },
     "cli": {
       "description": "Donnez à votre assistant l'accès à vos notes depuis le terminal.",
-      "installLabel": "Installer",
+      "installLabel": "CLI intégrée à l’application",
       "viewPlans": "Voir les forfaits",
       "local": {
         "label": "Local",

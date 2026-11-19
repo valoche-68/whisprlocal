@@ -2,6 +2,7 @@ export function useAuth() {
   return {
     isSignedIn: false,
     isGracePeriodOnly: false,
+    isOfflineAccount: false,
     isLoaded: true,
     session: null as { user: { id: string } } | null,
     user: null as {

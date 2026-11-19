@@ -1,6 +1,6 @@
 {
   "name": "whisprlocal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Independent Linux dictation with local and self-hosted models",
   "main": "main.js",
   "private": true,
@@ -28,7 +28,7 @@
     "dev:renderer": "cd src && vite",
     "prebuild": "npm run compile:native && npm run download:whisper-cpp && npm run download:llama-server && npm run download:sherpa-onnx && npm run download:yt-dlp && npm run download:qdrant && npm run download:meeting-aec-helper && npm run download:whisper-vad-model && npm run download:embedding-model -- --for-build && npm run download:diarization-models -- --output-dir resources/bin/diarization-models && node node_modules/@electron/rebuild/lib/cli.js --force --which-module better-sqlite3",
     "build": "npm run build:renderer && electron-builder --linux --x64",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "npm run apply:patches && electron-builder install-app-deps",
     "build:renderer": "cd src && vite build",
     "prebuild:linux": "npm run compile:native && npm run download:whisper-cpp && npm run download:llama-server && npm run download:sherpa-onnx && npm run download:yt-dlp && npm run download:qdrant && npm run download:meeting-aec-helper && npm run download:whisper-vad-model && npm run download:diarization-models -- --output-dir resources/bin/diarization-models && node node_modules/@electron/rebuild/lib/cli.js --force --which-module better-sqlite3",
     "build:linux": "npm run build:renderer && electron-builder --linux --x64",
@@ -66,7 +66,8 @@
     "preview": "cd src && vite preview",
     "clean": "node cleanup.js",
     "cli": "node src/local/command.cjs",
-    "test:local": "node --test test/local/*.test.cjs"
+    "test:local": "node --test test/local/*.test.cjs",
+    "apply:patches": "patch-package --error-on-fail"
   },
   "keywords": [
     "dictation",
@@ -82,7 +83,7 @@
   "license": "MIT",
   "devDependencies": {
     "@electron/notarize": "^3.0.1",
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^19.1.2",
@@ -100,6 +101,7 @@
     "espree": "^11.2.0",
     "globals": "17.5.0",
     "happy-dom": "^21.0.4",
+    "patch-package": "8.0.1",
     "postcss": "^8.5.10",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.1.10",
@@ -109,7 +111,7 @@
     "vite": "^8.1.6"
   },
   "dependencies": {
-    "@ai-sdk/amazon-bedrock": "^4.0.93",
+    "@ai-sdk/amazon-bedrock": "^4.0.129",
     "@ai-sdk/anthropic": "^3.0.58",
     "@ai-sdk/azure": "^3.0.53",
     "@ai-sdk/google": "^3.0.43",
@@ -161,7 +163,7 @@
     "flatted": "^3.4.4",
     "https-proxy-agent": "^7.0.6",
     "i18next": "^26.3.6",
-    "js-yaml": "^4.3.2",
+    "js-yaml": "^5.5.0",
     "kysely": "^0.28.17",
     "object-assign": "^4.1.1",
     "onnxruntime-node": "^1.21.0",
@@ -185,7 +187,6 @@
     "zustand": "^5.0.11"
   },
   "overrides": {
-    "adm-zip": "^0.6.1",
     "@tiptap/extension-blockquote": "3.31.3",
     "@tiptap/extension-bold": "3.31.3",
     "@tiptap/extension-bubble-menu": "3.31.3",
@@ -212,10 +213,14 @@
     "@tiptap/extensions": "3.31.3",
     "@tiptap/pm": "3.31.3",
     "@xmldom/xmldom@^0.8.0": "0.8.15",
+    "adm-zip": "^0.6.1",
     "fast-xml-builder": "1.2.0",
     "ip-address": "10.2.0",
     "markdown-it": "14.3.3",
     "shell-quote": "1.12.0",
+    "tinfoil": {
+      "ehbp": "0.2.5"
+    },
     "tmp": "0.2.7"
   },
   "homepage": "https://github.com/valoche-68/whisprlocal",

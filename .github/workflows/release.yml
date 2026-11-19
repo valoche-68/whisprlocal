@@ -18,6 +18,7 @@ jobs:
       - run: |
           test ! -d .github/upstream-conflicts
           npm ci --ignore-scripts
+          npm run apply:patches --if-present
           npm rebuild better-sqlite3 --runtime=node
           npm run typecheck
           node scripts/whisprlocal/checks.cjs

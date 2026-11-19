@@ -3,7 +3,7 @@ import { getSettings, selectResolvedLLMConfig } from "../../stores/settingsStore
 import { usePolicyStore } from "../../stores/policyStore";
 import { projectHelpSettings } from "./helpContext";
 import { bundledHelp, DOCS_ORIGIN } from "../../helpers/productHelpFallback";
-import { isAgentAllowed, isWebSearchAllowed } from "../../stores/policyRules";
+import { isAgentAllowed } from "../../stores/policyRules";
 
 export type HelpTopic = keyof typeof topics;
 export const HELP_TOPICS = Object.keys(topics) as HelpTopic[];
@@ -32,41 +32,10 @@ export interface HelpBasics {
 export async function lookupHelp(
   topic: HelpTopic,
   signal: AbortSignal,
-  page?: string
+  _page?: string
 ): Promise<HelpResult> {
-  if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-  const settings = getSettings();
-  const policy = usePolicyStore.getState();
-  const fullyLocal =
-    [
-      settings.transcriptionMode,
-      settings.meetingTranscriptionMode,
-      settings.uploadTranscriptionMode,
-    ].every((mode) => mode === "local") &&
-    (
-      [
-        "dictationCleanup",
-        "dictationAgent",
-        "noteFormatting",
-        "chatIntelligence",
-        "dictationTranslation",
-      ] as const
-    ).every((scope) => selectResolvedLLMConfig(settings, scope).mode === "local");
-  if (!settings.isSignedIn || fullyLocal) return bundledHelp(topic, "privacy") as HelpResult;
-  // Main owns authoritative account-bound policy and can reuse a cached verdict
-  // while the renderer policy is refreshing or unavailable.
-  if (policy.status === "managed" && (!isAgentAllowed(policy) || !isWebSearchAllowed(policy)))
-    return bundledHelp(topic, "policy") as HelpResult;
-  const id = crypto.randomUUID();
-  const cancel = () => window.electronAPI.cancelProductHelp(id);
-  signal.addEventListener("abort", cancel, { once: true });
-  try {
-    const result = await window.electronAPI.productHelp(id, { topic, ...(page ? { page } : {}) });
-    if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-    return result;
-  } finally {
-    signal.removeEventListener("abort", cancel);
-  }
+  signal.throwIfAborted();
+  return bundledHelp(topic, "privacy") as HelpResult;
 }
 
 /** Explicit projection, never spread settings: provider URLs, keys, notes and paths stay private. */
@@ -102,7 +71,7 @@ export async function getHelpContext(topic: HelpTopic): Promise<HelpContext> {
     readAt: new Date().toISOString(),
     policyStatus: policy.status,
     values,
-    note: "Read-only current saved configuration and known permission state, not a device test. appVersion is the OpenWhispr app version, not the OS version. For activationMode, push means Hold and tap means Tap. Activation mode does not determine local or cloud processing. Missing values are unknown. Processing selections may be constrained by organization policy.",
+    note: "Read-only WhisprLocal settings and known permission state. appVersion is the application version. For activationMode, push means Hold and tap means Tap. Missing values are unknown.",
   };
 }
 
@@ -130,7 +99,7 @@ export function productHelpMetadata(
         {
           title: article.path.split("/").pop(),
           path: article.path,
-          url: DOCS_ORIGIN + article.path,
+          url: DOCS_ORIGIN,
           source: value.source === "live" ? "live" : "bundled",
           reason: ["policy", "privacy", "rateLimit", "unavailable"].includes(value.reason as string)
             ? value.reason

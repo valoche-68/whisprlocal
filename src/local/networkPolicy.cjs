@@ -21,7 +21,7 @@ const DOWNLOAD_HOSTS = new Set([
   "transfer.xethub.hf.co",
 ]);
 const configured = new Set();
-function official(host) {
+function isOfficialHost(host) {
   // A trailing DNS dot denotes the same host and must not bypass the ban.
   return /(^|\.)(openwhispr|openwhisper)\.com$/i.test(host.replace(/\.+$/, ""));
 }
@@ -33,7 +33,11 @@ function isAllowed(value) {
     return false;
   }
   const h = url.hostname.toLowerCase();
-  if (official(h)) return false;
+  if (isOfficialHost(h)) return false;
+  if (
+    h === "raw.githubusercontent.com" &&
+    /^\/OpenWhispr\/model-registry(?:\/|$)/i.test(url.pathname)
+  ) return false;
   if (["file:", "data:", "blob:", "devtools:", "chrome-extension:"].includes(url.protocol))
     return true;
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return false;
@@ -46,7 +50,7 @@ function setConfigured(urls) {
   for (const value of urls) {
     try {
       const u = new URL(value);
-      if (!official(u.hostname) && ["http:", "https:"].includes(u.protocol)) {
+      if (!isOfficialHost(u.hostname) && ["http:", "https:"].includes(u.protocol)) {
         configured.add(u.origin);
         configured.add(u.origin.replace(/^http/, "ws"));
       }
@@ -157,4 +161,4 @@ function install({ app, session }) {
     });
   });
 }
-module.exports = { isAllowed, setConfigured, assertAllowed, install };
+module.exports = { isOfficialHost, isAllowed, setConfigured, assertAllowed, install };

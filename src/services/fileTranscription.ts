@@ -1,4 +1,3 @@
-import { withSessionRefresh } from "../lib/auth";
 import {
   resolveTranscriptionRoute,
   type ManagedTranscriptionResolution,
@@ -68,6 +67,7 @@ export interface TranscriptionApiKeys {
   tinfoilApiKey: string;
   deepgramApiKey: string;
   assemblyaiApiKey: string;
+  openrouterApiKey: string;
   customTranscriptionApiKey?: string;
 }
 
@@ -89,6 +89,8 @@ export function getTranscriptionApiKey(provider: string, keys: TranscriptionApiK
       return keys.deepgramApiKey;
     case "assemblyai":
       return keys.assemblyaiApiKey;
+    case "openrouter":
+      return keys.openrouterApiKey;
     case "custom":
       return keys.customTranscriptionApiKey || "";
     default:
@@ -141,18 +143,6 @@ export async function transcribeFile(
     };
   }
 
-  if (!managed && cfg.isOpenWhisprCloud) {
-    return withSessionRefresh(async () => {
-      const r = await window.electronAPI.transcribeAudioFileCloud!(filePath, opts);
-      if (!r.success && r.code) {
-        throw Object.assign(new Error(r.error || "Cloud transcription failed"), {
-          code: r.code,
-        });
-      }
-      return r;
-    });
-  }
-
   if (!managed && cfg.useLocalWhisper) {
     const provider = cfg.localTranscriptionProvider as LocalTranscriptionProvider;
     return window.electronAPI.transcribeAudioFile(filePath, {
@@ -178,6 +168,13 @@ export async function transcribeFile(
       error: route.message,
       code: route.code,
       messageKey: route.messageKey,
+    };
+  }
+  if (cfg.transcriptionMode !== "self-hosted" || managed || cfg.isOpenWhisprCloud) {
+    return {
+      success: false,
+      error: "WhisprLocal only transcribes with local or self-hosted models",
+      code: "LOCAL_ONLY",
     };
   }
 

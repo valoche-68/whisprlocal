@@ -1,7 +1,7 @@
 name: Review new OpenWhispr releases
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '11 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +26,9 @@ jobs:
           const fs=require('fs');const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/release.json'));const old=require('./upstream.json');
           if(r.draft||r.prerelease||!/^v\d+\.\d+\.\d+$/.test(r.tag_name))process.exit(0);
           const newer=(a,b)=>{const x=a.replace(/^v/,'').split('.').map(Number),y=b.replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if(x[i]!==y[i])return x[i]>y[i]}return false};
-          if(newer(r.tag_name,old.version))fs.appendFileSync(process.env.GITHUB_OUTPUT,`tag=${r.tag_name}\n`);
+          const available = newer(r.tag_name,old.version);
+          console.log(`OpenWhispr latest stable: ${r.tag_name}; integrated: ${old.tag}; migration ${available ? 'needed' : 'up to date'}`);
+          if(available)fs.appendFileSync(process.env.GITHUB_OUTPUT,`tag=${r.tag_name}\n`);
           JS
   prepare:
     needs: discover

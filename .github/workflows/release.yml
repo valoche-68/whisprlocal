@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-22.04
     env:
       CFLAGS: "-march=x86-64 -mtune=generic"
@@ -22,7 +22,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: |
-          test ! -d .github/upstream-conflicts
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            test ! -d .github/upstream-conflicts
+          fi
           npm ci --ignore-scripts
           npm run apply:patches --if-present
           npm rebuild better-sqlite3 --runtime=node
@@ -54,6 +56,7 @@ jobs:
           ONNXRUNTIME_NODE_INSTALL: skip
       - run: |
           cd dist
+          test -s latest-linux.yml
           sha256sum WhisprLocal-*-linux-x64.deb WhisprLocal-*-linux-x64.AppImage WhisprLocal-*-linux-x64.tar.gz > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
@@ -66,8 +69,10 @@ jobs:
             dist/*.blockmap
             dist/SHA256SUMS
           if-no-files-found: error
+          retention-days: 7
   draft:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

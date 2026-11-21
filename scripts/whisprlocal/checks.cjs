@@ -15,6 +15,8 @@ files.push(
   "test/helpers/localEditionDatabase.test.js",
   "test/helpers/updater.test.js",
   "test/helpers/kdeRetiredAgentShortcut.test.js",
+  "test/helpers/qdrantManager.test.js",
+  "test/helpers/uiLanguageStartup.test.js",
   "test/components/onboardingFlow.test.js",
   "test/components/setupEligibility.test.js",
   "test/components/localIntegrations.test.js",

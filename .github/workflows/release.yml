@@ -54,6 +54,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           ONNXRUNTIME_NODE_INSTALL: skip
+      - run: dist/linux-unpacked/resources/bin/qdrant-linux-x64 --version
       - run: |
           cd dist
           test -s latest-linux.yml

@@ -96,6 +96,60 @@ test("fresh Chinese browser locale survives settings hydration", async (t) => {
   );
 });
 
+test("windows adopt a language imported during startup and later settings changes", async (t) => {
+  installNavigatorLanguage(t, "fr-FR");
+  const storageListeners = [];
+  const mainWrites = [];
+  const { storage } = installBrowserGlobals(t, {
+    initialStorage: { customDictionary: JSON.stringify(["OpenWhispr"]) },
+    window: {
+      addEventListener(type, handler) {
+        if (type === "storage") storageListeners.push(handler);
+      },
+      electronAPI: {
+        getUiLanguage: async () => "",
+        getDictionary: async () => {
+          // The first window imports preferences while this window is still
+          // waiting for its initial settings, before the regular store listeners.
+          storage.setItem("uiLanguage", "en");
+          emitUiLanguage("en");
+          return ["OpenWhispr"];
+        },
+        setDictionary: async () => ({ success: true }),
+        setUiLanguage: async (lang) => mainWrites.push(lang),
+      },
+    },
+  });
+  function emitUiLanguage(newValue) {
+    for (const listener of storageListeners) {
+      listener({ key: "uiLanguage", newValue, storageArea: storage });
+    }
+  }
+  const vite = await createRendererServer(t, {
+    cachePrefix: "whisprlocal-ui-language-window-sync-test-",
+  });
+  const { default: i18n } = await vite.ssrLoadModule("/i18n.ts");
+  const { initializeSettings, useSettingsStore } = await vite.ssrLoadModule(
+    "/stores/settingsStore.ts"
+  );
+  assert.equal(i18n.language, "fr");
+
+  await initializeSettings();
+  assert.equal(i18n.language, "en");
+  assert.equal(useSettingsStore.getState().uiLanguage, "en");
+
+  storage.setItem("uiLanguage", "fr");
+  emitUiLanguage("fr");
+  assert.equal(i18n.language, "fr");
+  assert.equal(useSettingsStore.getState().uiLanguage, "fr");
+  assert.deepEqual(mainWrites, []);
+
+  useSettingsStore.getState().setUiLanguage("en");
+  assert.equal(i18n.language, "en");
+  assert.equal(storage.getItem("uiLanguage"), "en");
+  assert.deepEqual(mainWrites, ["en"]);
+});
+
 test("main locale fallback remains implicit and yields to an explicit preference", (t) => {
   const userDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "openwhispr-ui-language-"));
   const originalEnvironment = { ...process.env };

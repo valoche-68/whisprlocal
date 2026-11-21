@@ -2,7 +2,7 @@
 
 WhisprLocal stores application data in its own profile, normally `~/.config/whisprlocal`. The compatible OpenWhispr model cache is intentionally reused to avoid duplicate multi-gigabyte downloads. Neither the profile nor model files are part of the source repository or release artifacts.
 
-The local edition removes the account client, official API transport, synchronization implementation, analytics uploader and service-specific IPC handlers. The privacy screen retains local data controls and has no telemetry or diagnostic-upload switch. Local usage statistics are preserved.
+The local edition removes the account client, official API transport, synchronization implementation, analytics uploader and service-specific IPC handlers. The bundled Qdrant process runs with usage reporting disabled. The privacy screen retains local data controls and local usage statistics.
 
 The main process installs a destination policy before creating windows or engines. Electron session requests and Node HTTP/HTTPS and fetch calls allow loopback, known GitHub/Hugging Face download hosts, and origins explicitly saved through the self-hosted configuration. Official OpenWhispr web domains are denied even if entered manually. Node fetch refuses automatic redirects; Electron and HTTP download redirects are checked on each request. The updater feed is this repository only.
 

@@ -29,7 +29,8 @@ const BINARIES = {
     outputName: "qdrant-darwin-x64",
   },
   "linux-x64": {
-    archiveName: "qdrant-x86_64-unknown-linux-gnu.tar.gz",
+    // The GNU build can require a newer glibc than the supported desktop.
+    archiveName: "qdrant-x86_64-unknown-linux-musl.tar.gz",
     binaryName: "qdrant",
     outputName: "qdrant-linux-x64",
   },
@@ -57,9 +58,10 @@ function getDownloadUrl(release, archiveName) {
   return asset?.url || null;
 }
 
-function isCurrentVersion(markerPath, version) {
+function isCurrentAsset(markerPath, version, archiveName) {
   try {
-    return JSON.parse(fs.readFileSync(markerPath, "utf8")).version === version;
+    const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+    return marker.version === version && marker.archiveName === archiveName;
   } catch {
     return false;
   }
@@ -74,7 +76,11 @@ async function downloadBinary(platformArch, config, release, isForce = false) {
   const outputPath = path.join(BIN_DIR, config.outputName);
   const markerPath = path.join(BIN_DIR, `.qdrant-${platformArch}.json`);
 
-  if (fs.existsSync(outputPath) && !isForce && isCurrentVersion(markerPath, release.tag)) {
+  if (
+    fs.existsSync(outputPath) &&
+    !isForce &&
+    isCurrentAsset(markerPath, release.tag, config.archiveName)
+  ) {
     console.log(`  [qdrant] ${platformArch}: Already up to date (${release.tag})`);
     return true;
   }
@@ -99,7 +105,10 @@ async function downloadBinary(platformArch, config, release, isForce = false) {
     if (binaryPath) {
       fs.copyFileSync(binaryPath, outputPath);
       setExecutable(outputPath);
-      fs.writeFileSync(markerPath, JSON.stringify({ version: release.tag }));
+      fs.writeFileSync(
+        markerPath,
+        JSON.stringify({ version: release.tag, archiveName: config.archiveName })
+      );
       console.log(`  [qdrant] ${platformArch}: Extracted to ${config.outputName}`);
     } else {
       console.error(

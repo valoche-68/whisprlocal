@@ -35,6 +35,7 @@ function loadManager({ gracefulStop } = {}) {
   const state = {
     healthy: true,
     spawnCalls: [],
+    spawnArgs: [],
     pidFileOps: [],
     warns: [],
     errors: [],
@@ -60,9 +61,10 @@ function loadManager({ gracefulStop } = {}) {
     }
     if (request === "child_process") {
       return {
-        spawn: () => {
+        spawn: (_binaryPath, args) => {
           const child = makeChild(state.nextPid++);
           state.spawnCalls.push(child);
+          state.spawnArgs.push(args);
           return child;
         },
       };
@@ -147,6 +149,7 @@ test("start spawns qdrant, writes the pid entry, and stop clears it", async () =
 
   assert.equal(manager.isReady(), true);
   assert.equal(manager.getPort(), 6333);
+  assert.ok(state.spawnArgs[0].includes("--disable-telemetry"));
   assert.deepEqual(state.pidFileOps, [["write", "qdrant", 1001]]);
 
   await manager.stop();
@@ -167,6 +170,7 @@ test("restarts the sidecar after sustained health-check failures", async (t) => 
 
   assert.equal(await waitForReady(manager), true);
   assert.equal(state.spawnCalls.length, 2);
+  assert.ok(state.spawnArgs[1].includes("--disable-telemetry"));
   assert.equal(manager.getPort(), 6333);
   assert.deepEqual(state.pidFileOps, [
     ["write", "qdrant", 1001],

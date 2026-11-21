@@ -10,15 +10,22 @@ const sourcePath = require.resolve("../../scripts/download-qdrant");
 const requireFromDownloader = createRequire(sourcePath);
 const downloadUtils = requireFromDownloader("./lib/download-utils");
 const targets = [
-  ["linux-x64", "qdrant-x86_64-unknown-linux-gnu.tar.gz", "qdrant-linux-x64"],
+  ["linux-x64", "qdrant-x86_64-unknown-linux-musl.tar.gz", "qdrant-linux-x64"],
   ["darwin-arm64", "qdrant-aarch64-apple-darwin.tar.gz", "qdrant-darwin-arm64"],
   ["darwin-x64", "qdrant-x86_64-apple-darwin.tar.gz", "qdrant-darwin-x64"],
   ["win32-x64", "qdrant-x86_64-pc-windows-msvc.zip", "qdrant-win32-x64.exe"],
 ];
 
-async function runDownloader(t, { platformArch = "linux-x64", version, all = false } = {}) {
+async function runDownloader(t, { platformArch = "linux-x64", version, all = false, marker } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "qdrant-download-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, "resources", "bin");
+  if (marker) {
+    const [, , name] = targets.find(([target]) => target === platformArch);
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, name), "cached binary");
+    fs.writeFileSync(path.join(binDir, `.qdrant-${platformArch}.json`), JSON.stringify(marker));
+  }
   const processState = { env: version ? { QDRANT_VERSION: version } : {} };
   const lookups = [];
   const downloads = [];
@@ -62,7 +69,7 @@ async function runDownloader(t, { platformArch = "linux-x64", version, all = fal
     },
   });
   return {
-    binDir: path.join(root, "resources", "bin"),
+    binDir,
     processState,
     lookups,
     downloads,
@@ -90,6 +97,17 @@ test("all-platform downloads use one complete release for every binary", async (
   for (const [, archiveName, outputName] of targets) {
     assert.equal(fs.readFileSync(path.join(result.binDir, outputName), "utf8"), archiveName);
   }
+});
+
+test("a cached Linux build is reused only if it matches the selected archive", async (t) => {
+  const [, archiveName, outputName] = targets[0];
+  const version = "v1.20.1";
+  const old = await runDownloader(t, { marker: { version } });
+  assert.equal(old.downloads.length, 1);
+  assert.equal(fs.readFileSync(path.join(old.binDir, outputName), "utf8"), archiveName);
+  const fresh = await runDownloader(t, { marker: { version, archiveName } });
+  assert.equal(fresh.downloads.length, 0);
+  assert.equal(fs.readFileSync(path.join(fresh.binDir, outputName), "utf8"), "cached binary");
 });
 
 test("an explicit version downloads that exact tag rather than a matching tag prefix", async (t) => {

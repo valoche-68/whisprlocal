@@ -4342,22 +4342,27 @@ export async function initializeSettings(): Promise<void> {
       );
     }
 
-    // Sync UI language from main process
+    // Read the preference again after the main-process call: another window
+    // may have imported or changed it while this one was starting.
+    const previousUiLanguage = localStorage.getItem("uiLanguage");
     try {
       const envLanguage = await window.electronAPI.getUiLanguage?.();
-      const resolved = normalizeUiLanguage(envLanguage || state.uiLanguage);
-      if (resolved !== state.uiLanguage) {
-        if (isBrowser) localStorage.setItem("uiLanguage", resolved);
-        useSettingsStore.setState({ uiLanguage: resolved });
+      const stored = localStorage.getItem("uiLanguage");
+      const configured = stored !== previousUiLanguage ? stored : envLanguage || stored;
+      if (configured) {
+        const resolved = normalizeUiLanguage(configured);
+        if (stored !== resolved) localStorage.setItem("uiLanguage", resolved);
+        await applyUiLanguage(resolved);
       }
-      await i18n.changeLanguage(resolved);
     } catch (err) {
       logger.warn(
         "Failed to sync UI language on startup",
         { error: (err as Error).message },
         "settings"
       );
-      void i18n.changeLanguage(normalizeUiLanguage(state.uiLanguage));
+      await applyUiLanguage(
+        localStorage.getItem("uiLanguage") || useSettingsStore.getState().uiLanguage
+      );
     }
 
     const migratedLang = isBrowser ? localStorage.getItem("preferredLanguage") : null;
@@ -4519,6 +4524,7 @@ export async function initializeSettings(): Promise<void> {
     if (!event.key || event.storageArea !== localStorage || event.newValue === null) return;
 
     const { key, newValue } = event;
+    if (key === "uiLanguage") return;
 
     if (key.startsWith("customPrompt.")) {
       const kind = key.slice("customPrompt.".length) as PromptKind;
@@ -4582,10 +4588,6 @@ export async function initializeSettings(): Promise<void> {
     if (key === "mcalAccounts" && Array.isArray(value)) {
       useSettingsStore.setState({ mcalConnected: (value as CalendarAccount[]).length > 0 });
     }
-
-    if (key === "uiLanguage" && typeof value === "string") {
-      void i18n.changeLanguage(value);
-    }
   });
 
   void window.electronAPI
@@ -4627,8 +4629,24 @@ export async function initializeSettings(): Promise<void> {
   });
 }
 
+async function applyUiLanguage(language: string): Promise<void> {
+  const uiLanguage = normalizeUiLanguage(language);
+  if (useSettingsStore.getState().uiLanguage !== uiLanguage) {
+    useSettingsStore.setState({ uiLanguage });
+  }
+  if (i18n.language !== uiLanguage) await i18n.changeLanguage(uiLanguage);
+}
+
 // The main process uses this list to allow configured self-hosted origins only.
 if (typeof window !== "undefined") {
+  // Some settings hydration waits for SQLite. Listen before it starts so a
+  // first-time profile import can reach every renderer, including the pill.
+  window.addEventListener("storage", (event) => {
+    if (event.key === "uiLanguage" && event.storageArea === localStorage && event.newValue) {
+      void applyUiLanguage(event.newValue);
+    }
+  });
+
   const publish = () => {
     const state = useSettingsStore.getState();
     const urls = Object.entries(state)

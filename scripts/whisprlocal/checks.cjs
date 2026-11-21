@@ -14,6 +14,10 @@ files.push(
   "test/helpers/secretKeys.test.js",
   "test/helpers/localEditionDatabase.test.js",
   "test/helpers/updater.test.js",
+  "test/helpers/kdeRetiredAgentShortcut.test.js",
+  "test/components/onboardingFlow.test.js",
+  "test/components/setupEligibility.test.js",
+  "test/components/localIntegrations.test.js",
   "test/components/toneStyleSection.test.js",
   "test/components/localDictationAgentSettings.test.js"
 );

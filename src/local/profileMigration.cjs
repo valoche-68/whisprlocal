@@ -78,16 +78,31 @@ function scrubDatabase(db) {
       "calendar_events",
       "connector_actions",
       "space_accounts",
+      "device_accounts",
+      "account_workspace_scopes",
+      "stand_in_ownership_checks",
+      "workspace_names",
+      "shared_dictionary_entries",
+      "shared_dictionary_hides",
+      "shared_dictionary_meta",
+      "analytics_account_clear_state",
       "analytics_clear_requests",
     ])
       if (tables.includes(table)) db.exec(`DELETE FROM "${table}"`);
-    // Upstream calls the device-owned space "private", not "personal".
-    // Move imported team content into it before dropping account attribution.
-    // Two accounts can have same-named default folders in one space, so give
-    // colliding folders unique names while preserving their IDs and contents.
+    // In 1.12, a signed-out profile displays a single device-owned private
+    // space. Consolidate imported content there before clearing ownership.
     if (tables.includes("spaces")) {
+      const cols = db.pragma("table_info(spaces)").map((column) => column.name);
+      const localSpace = ["account_id", "workspace_id"]
+        .filter((column) => cols.includes(column))
+        .map((column) => column + " IS NULL")
+        .join(" AND ");
       let privateSpace = db
-        .prepare("SELECT id FROM spaces WHERE kind='private' ORDER BY id LIMIT 1")
+        .prepare(
+          "SELECT id FROM spaces WHERE kind='private'" +
+            (cols.includes("deleted_at") ? " AND deleted_at IS NULL" : "") +
+            " ORDER BY " + (localSpace ? "(" + localSpace + ") DESC, " : "") + "id LIMIT 1"
+        )
         .get();
       if (!privateSpace) {
         const inserted = db
@@ -95,54 +110,92 @@ function scrubDatabase(db) {
           .run();
         privateSpace = { id: inserted.lastInsertRowid };
       }
-      const privateIds = new Set(
-        db
-          .prepare("SELECT id FROM spaces WHERE kind='private'")
-          .all()
-          .map((row) => row.id)
-      );
       if (tables.includes("folders")) {
         const folders = db
-          .prepare("SELECT id, name, space_id, deleted_at FROM folders ORDER BY id")
-          .all();
+          .prepare(
+            "SELECT id, name, deleted_at FROM folders ORDER BY (space_id = ?) DESC, id"
+          )
+          .all(privateSpace.id);
         const occupiedNames = new Set(folders.map((row) => row.name));
         const assigned = new Set();
         for (const folder of folders) {
           if (folder.deleted_at) continue;
-          const targetSpace = privateIds.has(folder.space_id) ? folder.space_id : privateSpace.id;
-          const key = `${targetSpace}\0${folder.name}`;
-          if (!assigned.has(key)) {
-            assigned.add(key);
+          if (!assigned.has(folder.name)) {
+            assigned.add(folder.name);
             continue;
           }
           let name = `${folder.name} (imported ${folder.id})`;
           while (occupiedNames.has(name)) name += "_";
           occupiedNames.add(name);
-          assigned.add(`${targetSpace}\0${name}`);
+          assigned.add(name);
           db.prepare("UPDATE folders SET name=? WHERE id=?").run(name, folder.id);
         }
       }
       for (const table of ["notes", "folders"])
         if (tables.includes(table))
           db.prepare(
-            `UPDATE "${table}" SET space_id=? WHERE space_id IS NULL OR space_id NOT IN (SELECT id FROM spaces WHERE kind='private')`
-          ).run(privateSpace.id);
+            `UPDATE "${table}" SET space_id=? WHERE space_id IS NOT ?`
+          ).run(privateSpace.id, privateSpace.id);
       if (tables.includes("agent_conversations")) {
         db.prepare(
-          "UPDATE agent_conversations SET space_id=? WHERE space_id IS NOT NULL AND space_id NOT IN (SELECT id FROM spaces WHERE kind='private')"
-        ).run(privateSpace.id);
+          "UPDATE agent_conversations SET space_id=? WHERE space_id IS NOT NULL AND space_id != ?"
+        ).run(privateSpace.id, privateSpace.id);
         if (tables.includes("folders"))
           db.exec(
             "UPDATE agent_conversations SET space_id=(SELECT space_id FROM folders WHERE folders.id=agent_conversations.folder_id) WHERE folder_id IN (SELECT id FROM folders)"
           );
       }
-      db.exec("DELETE FROM spaces WHERE kind!='private'");
-      const cols = db
-        .prepare("PRAGMA table_info(spaces)")
-        .all()
-        .map((c) => c.name);
-      for (const col of ["cloud_team_id", "workspace_id", "cloud_space_id"])
+      db.prepare("DELETE FROM spaces WHERE id != ?").run(privateSpace.id);
+      for (const col of [
+        "cloud_team_id",
+        "workspace_id",
+        "cloud_space_id",
+        "account_id",
+        "teams",
+        "my_role",
+        "my_direct_role",
+        "member_count",
+        "capabilities",
+      ])
         if (cols.includes(col)) db.exec(`UPDATE spaces SET "${col}"=NULL`);
+      if (cols.includes("is_default_private")) db.exec("UPDATE spaces SET is_default_private=0");
+    }
+    // Dictionary copies of exactly the same word collapse to one live entry.
+    if (tables.includes("custom_dictionary") &&
+        db.pragma("table_info(custom_dictionary)").some((column) => column.name === "account_id")) {
+      db.exec(`DELETE FROM custom_dictionary WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY word ORDER BY (deleted_at IS NULL) DESC, (account_id IS NULL) DESC, id
+          ) AS position FROM custom_dictionary
+        ) WHERE position > 1
+      )`);
+    }
+    // Different user snippets can have the same trigger. Preserve both texts
+    // and assign a distinct trigger to each imported copy.
+    if (tables.includes("snippets") &&
+        db.pragma("table_info(snippets)").some((column) => column.name === "account_id")) {
+      const snippets = db.prepare(`SELECT id, trigger FROM snippets
+        WHERE deleted_at IS NULL ORDER BY (account_id IS NULL) DESC, id`).all();
+      const occupied = new Set(snippets.map(({ trigger }) => trigger.toLowerCase()));
+      const assigned = new Set();
+      const rename = db.prepare("UPDATE snippets SET trigger=? WHERE id=?");
+      for (const snippet of snippets) {
+        const key = snippet.trigger.toLowerCase();
+        if (!assigned.has(key)) {
+          assigned.add(key);
+          continue;
+        }
+        let suffix = `-imported-${snippet.id}`;
+        let replacement = snippet.trigger.slice(0, 100 - suffix.length) + suffix;
+        while (occupied.has(replacement.toLowerCase())) {
+          suffix += "_";
+          replacement = snippet.trigger.slice(0, Math.max(0, 100 - suffix.length)) + suffix;
+        }
+        occupied.add(replacement.toLowerCase());
+        assigned.add(replacement.toLowerCase());
+        rename.run(replacement, snippet.id);
+      }
     }
     for (const table of [
       "notes",

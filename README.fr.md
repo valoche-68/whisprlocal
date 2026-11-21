@@ -6,11 +6,11 @@
 
 > Projet indépendant, **sans affiliation avec OpenWhispr, Gizmo Labs ou OpenAI**, sans approbation ni exploitation par ces organisations. Whisper est un modèle initialement publié par OpenAI ; son utilisation ne crée aucune affiliation.
 
-Version du projet : **0.1.0**. Base officielle : **OpenWhispr 1.11.0**, suivie séparément dans [`upstream.json`](upstream.json).
+La version **0.2.0** du projet repose sur **OpenWhispr 1.12.0**. Le tag et le commit amont figurent dans [`upstream.json`](upstream.json).
 
 ## La même interface, centrée sur le local
 
-La disposition, les composants, les thèmes et les écrans de premier démarrage officiels sont conservés. Les étapes liées aux comptes et aux services supprimés sont sautées. Dictée, raccourcis, presse-papier, collage automatique, notes, réunions, fichiers audio, dictionnaire, extraits, assistants et statistiques locales restent disponibles avec les modèles locaux ou les serveurs auto-hébergés pris en charge.
+La disposition, les thèmes, la nouvelle fenêtre d’assistant et l’écran de configuration locale reprennent la version officielle. Dictée, raccourcis, presse-papier, collage automatique, notes, réunions, fichiers audio, dictionnaire, extraits, assistants et statistiques locales restent disponibles avec les modèles locaux ou les serveurs auto-hébergés pris en charge.
 
 Whisper se décharge **cinq secondes après la fin complète de la transcription** par défaut. Un interrupteur et les délais 5 / 10 / 30 / 60 / 300 secondes sont persistants et appliqués immédiatement. La dictée suivante recharge le modèle. Les packs CUDA officiels complets fournissent leurs bibliothèques CUDA 12 ; aucun environnement Python personnel n’est nécessaire.
 
@@ -18,9 +18,7 @@ Whisper se décharge **cinq secondes après la fin complète de la transcription
 
 Aucun compte, connexion, abonnement, facturation, forfait, espace d’équipe ou synchronisation officielle. Aucun fournisseur d’IA cloud ni configuration de ses clés. Le MCP distant et la CLI cloud sont remplacés par des outils locaux. Les calendriers et connecteurs nécessitant un compte tiers sont retirés, sans prétendre les convertir en services locaux.
 
-Le contexte automatique par capture d’écran et le modèle de vision indépendant ne sont pas disponibles dans cette édition : le transport d’images n’est pas implémenté dans les routes locales/auto-hébergées de la base officielle. Les assistants textuels restent disponibles.
-
-La télémétrie et les envois de diagnostics sont supprimés, sans option de réactivation. Les statistiques conservées sur cet ordinateur restent disponibles. Le traitement d’images par l’assistant exige un modèle adapté ; la transcription de réunions en temps réel sur serveur auto-hébergé n’est pas fournie par la base 1.11.0.
+L’assistant traite du texte avec des modèles locaux ou auto-hébergés. La transcription des réunions en direct utilise des modèles locaux. Les statistiques sont conservées sur cet ordinateur.
 
 ## Plateforme prise en charge
 
@@ -41,6 +39,8 @@ Pour une installation décompactée dans votre espace utilisateur, extrayez l’
 Les modèles compatibles déjà présents dans le cache OpenWhispr sont réutilisés. L’import d’un profil ne déclenche pas leur téléchargement complet. Une fois les modèles installés, la transcription locale fonctionne hors connexion.
 
 ## Conserver les paramètres existants
+
+Une mise à jour depuis WhisprLocal 0.1.0 réutilise son profil et les modèles déjà téléchargés. La commande ci-dessous sert à importer un profil depuis OpenWhispr.
 
 Fermez les deux applications, puis lancez cette commande depuis la nouvelle application extraite :
 

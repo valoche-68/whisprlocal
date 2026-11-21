@@ -29,10 +29,6 @@ import { Tooltip } from "./ui/tooltip";
 
 type ActivityDay = { date: string; words: number };
 
-interface InsightsViewProps {
-  onSignIn: () => void;
-}
-
 const LeaderboardView = lazy(() => import("./LeaderboardView"));
 
 const ACTIVITY_INTENSITY_CLASSES = [
@@ -463,7 +459,7 @@ function YourUsage({
   );
 }
 
-export default function InsightsView(_props: InsightsViewProps) {
+export default function InsightsView() {
   const { t } = useTranslation();
   const dataRetentionEnabled = useSettings().dataRetentionEnabled;
   return (

@@ -5,6 +5,34 @@ if (!localStorage.getItem("whisprlocalProfileImported")) {
   localStorage.setItem("whisprlocalProfileImported", "true");
 }
 // Must be imported before settingsStore. Never import account sessions or cloud secrets.
+// A legacy Custom speech setup stored its explicitly configured server under provider keys.
+for (const [modeKey, legacy, remote] of [
+  ["transcriptionMode", "cloudTranscription", "remoteTranscription"],
+  ["uploadTranscriptionMode", "uploadCloudTranscription", "uploadRemoteTranscription"],
+]) {
+  if (
+    localStorage.getItem(modeKey) !== "self-hosted" ||
+    localStorage.getItem(`${legacy}Provider`) !== "custom" ||
+    localStorage.getItem(`${remote}Url`)?.trim()
+  ) continue;
+  const legacyUrl = localStorage.getItem(`${legacy}BaseUrl`)?.trim();
+  if (!legacyUrl) continue;
+  try {
+    const url = new URL(legacyUrl);
+    const host = url.hostname.replace(/\.+$/, "");
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username || url.password ||
+      /(^|\.)(openwhispr|openwhisper)\.com$/i.test(host)
+    ) continue;
+    localStorage.setItem(`${remote}Url`, legacyUrl);
+    const model = localStorage.getItem(`${legacy}Model`);
+    if (model && !localStorage.getItem(`${remote}Model`)?.trim())
+      localStorage.setItem(`${remote}Model`, model);
+  } catch {
+    // Leave an invalid legacy value unused.
+  }
+}
 const modes = [
   "transcriptionMode",
   "meetingTranscriptionMode",
@@ -17,7 +45,8 @@ const modes = [
   "dictationAgentVisionMode",
 ];
 for (const key of modes) {
-  if (!["local", "self-hosted"].includes(localStorage.getItem(key)))
+  const availableModes = key === "meetingTranscriptionMode" ? ["local"] : ["local", "self-hosted"];
+  if (!availableModes.includes(localStorage.getItem(key)))
     localStorage.setItem(key, "local");
 }
 for (const [key, mode] of [

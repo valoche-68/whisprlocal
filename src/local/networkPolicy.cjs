@@ -21,7 +21,7 @@ const DOWNLOAD_HOSTS = new Set([
   "transfer.xethub.hf.co",
 ]);
 const configured = new Set();
-function official(host) {
+function isOfficialHost(host) {
   // A trailing DNS dot denotes the same host and must not bypass the ban.
   return /(^|\.)(openwhispr|openwhisper)\.com$/i.test(host.replace(/\.+$/, ""));
 }
@@ -32,8 +32,16 @@ function isAllowed(value) {
   } catch {
     return false;
   }
-  const h = url.hostname.toLowerCase();
-  if (official(h)) return false;
+  const h = url.hostname.toLowerCase().replace(/\.+$/, "");
+  if (isOfficialHost(h)) return false;
+  const registryPath = /^\/(?:repos\/)?openwhispr\/model-registry(?:\/|$)/i;
+  if (["github.com", "api.github.com", "raw.githubusercontent.com"].includes(h)) {
+    try {
+      if (registryPath.test(decodeURIComponent(url.pathname))) return false;
+    } catch {
+      return false;
+    }
+  }
   if (["file:", "data:", "blob:", "devtools:", "chrome-extension:"].includes(url.protocol))
     return true;
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return false;
@@ -46,7 +54,7 @@ function setConfigured(urls) {
   for (const value of urls) {
     try {
       const u = new URL(value);
-      if (!official(u.hostname) && ["http:", "https:"].includes(u.protocol)) {
+      if (!isOfficialHost(u.hostname) && ["http:", "https:"].includes(u.protocol)) {
         configured.add(u.origin);
         configured.add(u.origin.replace(/^http/, "ws"));
       }
@@ -75,9 +83,11 @@ function audit(url, allowed, transport) {
     /* Auditing must not affect the request. No paths, query strings or credentials. */
   }
 }
-function assertAllowed(url) {
-  audit(url, isAllowed(String(url)), "node");
-  if (!isAllowed(String(url)))
+function assertAllowed(url, { configuredOnly = false } = {}) {
+  const destination = String(url);
+  const allowed = isAllowed(destination) && (!configuredOnly || configured.has(new URL(destination).origin));
+  audit(destination, allowed, "node");
+  if (!allowed)
     throw Object.assign(new Error("WhisprLocal blocked an unconfigured network destination"), {
       code: "NETWORK_POLICY",
     });
@@ -157,4 +167,4 @@ function install({ app, session }) {
     });
   });
 }
-module.exports = { isAllowed, setConfigured, assertAllowed, install };
+module.exports = { isOfficialHost, isAllowed, setConfigured, assertAllowed, install };

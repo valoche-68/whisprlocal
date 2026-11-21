@@ -2,6 +2,7 @@ const { shell } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const debugLogger = require("./debugLogger");
+const { isOfficialHost } = require("../local/networkPolicy.cjs");
 
 // On Windows, shell.openExternal runs ShellExecuteExW inside the Electron main
 // process, so a cold-started default browser (and any meeting client it
@@ -27,7 +28,11 @@ const debugLogger = require("./debugLogger");
 const EXPLORER_BREAKING_CHARS = /[?#=,]/;
 
 async function openExternalUrl(url) {
-  const { protocol, href } = new URL(url);
+  const { protocol, href, hostname, pathname } = new URL(url);
+  if (
+    isOfficialHost(hostname) ||
+    (protocol === "mailto:" && isOfficialHost(pathname.split("@").at(-1)))
+  ) throw new Error("Official service links are unavailable in WhisprLocal");
   if (
     process.platform === "win32" &&
     (protocol === "http:" || protocol === "https:") &&

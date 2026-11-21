@@ -93,7 +93,7 @@ jobs:
         with:
           node-version: 24
       # No publication credentials or write token are exposed to imported code.
-      - run: npm ci --ignore-scripts && npm rebuild better-sqlite3 --runtime=node
+      - run: npm ci --ignore-scripts && npm run apply:patches --if-present && npm rebuild better-sqlite3 --runtime=node
       - run: npm run typecheck && npm run build:renderer
       - run: node scripts/whisprlocal/checks.cjs && npm run test:local
   ready-for-review:

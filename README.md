@@ -6,11 +6,11 @@
 
 > WhisprLocal is an independent derivative. It is **not affiliated with, endorsed by, or operated by OpenWhispr, Gizmo Labs, or OpenAI**. Whisper is a model originally released by OpenAI; using it does not imply any affiliation.
 
-Initial project version: **0.1.0**. Upstream base: **OpenWhispr 1.11.0**. These versions are tracked independently in [`upstream.json`](upstream.json).
+Project version **0.2.0** is based on **OpenWhispr 1.12.0**. The upstream tag and commit are tracked in [`upstream.json`](upstream.json).
 
 ## What stays familiar
 
-The official application layout, components, themes and onboarding screens are retained. Account and connected-service steps are omitted. Dictation, keyboard shortcuts, clipboard and automatic paste, notes, meetings, audio-file imports, dictionary, snippets, assistants and local usage statistics work with local models or supported self-hosted endpoints.
+The official layout, themes, new assistant window and local setup screen are retained. Dictation, keyboard shortcuts, clipboard and automatic paste, notes, meetings, audio-file imports, dictionary, snippets, assistants and local usage statistics work with local models or supported self-hosted endpoints.
 
 Whisper unloads after the complete transcription finishes: **5 seconds by default**, with 5 / 10 / 30 / 60 / 300 second choices and a persistent on/off switch. Settings take effect immediately. The next dictation reloads the model. Official CUDA packs bundle their CUDA 12 runtime libraries; no Python environment is required.
 
@@ -25,7 +25,7 @@ Whisper unloads after the complete transcription finishes: **5 seconds by defaul
 | Model and GPU engine downloads                      | Account-based calendar and third-party connectors                |
 | Local usage statistics                              | Telemetry and diagnostic uploads, with no switch to restore them |
 
-Removing an integration does not turn it into a local service. Automatic screenshot context and the independent vision-model override are unavailable in this edition: upstream's local/self-hosted route does not implement their image transport. Text assistants remain available. Self-hosted realtime meeting transcription is not provided by upstream 1.11.0.
+The assistant supports text workflows with local and self-hosted models. Live meeting transcription uses local models.
 
 ## Supported platform
 
@@ -46,6 +46,8 @@ For an unpacked installation in your user account, extract the archive and run *
 No model is downloaded automatically merely to import an existing profile. The existing compatible OpenWhispr model cache is reused. Model and engine downloads require a network connection; transcription with downloaded local models works offline.
 
 ## Keep your existing settings
+
+Updates from WhisprLocal 0.1.0 use the existing WhisprLocal profile and model cache. The migration command below is for importing a profile from OpenWhispr.
 
 Close OpenWhispr and WhisprLocal first. From the new extracted application, run:
 
@@ -111,6 +113,7 @@ Node.js **24+**, npm, a Linux x86_64 build environment, GCC, GLib development he
 
 ```sh
 npm ci --ignore-scripts
+npm run apply:patches
 npm rebuild better-sqlite3 --runtime=node
 npm run typecheck
 node scripts/whisprlocal/checks.cjs

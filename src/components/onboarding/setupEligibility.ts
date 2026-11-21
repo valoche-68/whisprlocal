@@ -1,5 +1,5 @@
 import {
-  filterByokProviderOptionsByPolicy,
+  filterLocalModelOptionsByPolicy,
   isModeAllowedByPolicy,
   isProviderAllowedByPolicy,
   type PolicyDecisionSnapshot,
@@ -10,9 +10,7 @@ interface ProviderOption {
 }
 
 export interface OnboardingSetupAvailability {
-  cloud: boolean;
   local: boolean;
-  byok: boolean;
   selfHosted: boolean;
 }
 
@@ -24,28 +22,17 @@ export interface OnboardingSetupAvailability {
 export function getOnboardingSetupAvailability({
   policy,
   agentAllowed,
-  transcriptionProviders,
-  llmProviders,
+  supportedLocalTranscriptionModels,
 }: {
   policy: PolicyDecisionSnapshot;
   agentAllowed: boolean;
-  transcriptionProviders: ProviderOption[];
-  llmProviders: ProviderOption[];
+  supportedLocalTranscriptionModels: ProviderOption[];
 }): OnboardingSetupAvailability {
-  const transcriptionByokAvailable =
-    isModeAllowedByPolicy(policy, "transcription", "providers") &&
-    filterByokProviderOptionsByPolicy(transcriptionProviders, "transcription", policy).length > 0;
-  const llmByokAvailable =
-    isModeAllowedByPolicy(policy, "llm", "providers") &&
-    filterByokProviderOptionsByPolicy(llmProviders, "llm", policy).length > 0;
-
-  const cloud =
-    isModeAllowedByPolicy(policy, "transcription", "openwhispr") &&
-    (!agentAllowed || isModeAllowedByPolicy(policy, "llm", "openwhispr"));
+  // Only speech decides: the local assistant step is optional, and when AI text
+  // is blocked it says so and offers Skip.
   const local =
-    isModeAllowedByPolicy(policy, "transcription", "local") &&
-    (!agentAllowed || isModeAllowedByPolicy(policy, "llm", "local"));
-  const byok = transcriptionByokAvailable && (!agentAllowed || llmByokAvailable);
+    filterLocalModelOptionsByPolicy(supportedLocalTranscriptionModels, "transcription", policy)
+      .length > 0;
   const selfHosted =
     isModeAllowedByPolicy(policy, "transcription", "self-hosted") &&
     isProviderAllowedByPolicy(policy, "transcription", "custom") &&
@@ -53,7 +40,7 @@ export function getOnboardingSetupAvailability({
       (isModeAllowedByPolicy(policy, "llm", "self-hosted") &&
         isProviderAllowedByPolicy(policy, "llm", "custom")));
 
-  return { cloud: false, local, byok: false, selfHosted };
+  return { local, selfHosted };
 }
 
 export function hasAvailableOnboardingSetup(availability: OnboardingSetupAvailability): boolean {

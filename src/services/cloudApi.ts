@@ -1,18 +1,4 @@
-import {
-  getValidatedAuthGeneration,
-  invalidateValidatedAuthContext,
-  readAuthTokenState,
-} from "../lib/authRequestContext";
-
-interface CloudApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  code?: string;
-  status?: number;
-}
-
-// Common `{ data: T }` envelope returned by the cloud API.
+// Compatibility for upstream components excluded from the local edition.
 export interface DataWrap<T> {
   data: T;
 }
@@ -21,24 +7,43 @@ export class CloudApiError extends Error {
   status: number;
   code?: string;
   details?: unknown;
-  constructor(message: string, status: number, code?: string, details?: unknown) {
+  requestSent?: boolean;
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    details?: unknown,
+    requestSent?: boolean
+  ) {
     super(message);
     this.name = "CloudApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.requestSent = requestSent;
   }
+}
+
+export function serverRefusalMessage(error: unknown): string | null {
+  if (!(error instanceof CloudApiError)) return null;
+  const { status, message } = error;
+  if (status < 400 || status >= 500 || status === 401 || message === `API error: ${status}`) {
+    return null;
+  }
+  return message;
 }
 
 async function cloudRequest<T = unknown>(..._args: unknown[]): Promise<T> {
   throw new CloudApiError(
     "Accounts and official services are unavailable in WhisprLocal",
     0,
-    "LOCAL_ONLY"
+    "LOCAL_ONLY",
+    undefined,
+    false
   );
 }
 
-export async function cloudGet<T = unknown>(path: string): Promise<T> {
+export async function cloudGet<T = unknown>(path: string, _cache?: "no-store"): Promise<T> {
   return cloudRequest<T>("GET", path);
 }
 
@@ -47,7 +52,8 @@ export async function cloudGet<T = unknown>(path: string): Promise<T> {
 // replacement account's token when it eventually reaches the main process.
 export async function cloudGetForAuthGeneration<T = unknown>(
   path: string,
-  authGeneration: number
+  authGeneration: number,
+  _cache?: "no-store"
 ): Promise<T> {
   return cloudRequest<T>("GET", path, undefined, false, authGeneration);
 }
@@ -106,4 +112,8 @@ export function isAuthContextError(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("code" in error)) return false;
   const code = (error as { code?: unknown }).code;
   return code === "AUTH_CONTEXT_CHANGED" || code === "AUTH_CONTEXT_UNVALIDATED";
+}
+
+export function wasRefusedBeforeSending(error: unknown): boolean {
+  return error instanceof CloudApiError && isAuthContextError(error) && error.requestSent === false;
 }

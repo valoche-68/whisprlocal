@@ -4,32 +4,23 @@ const test = require("node:test");
 
 const load = () => import("../../src/components/onboarding/flow.ts");
 
-test("account flow includes the complete guided setup", async () => {
-  const { getOnboardingRoute } = await load();
-  assert.deepEqual(
-    getOnboardingRoute({ authPath: "account", setupMode: null, agentAllowed: true }),
-    [
-      "auth",
-      "permissions",
-      "languages",
-      "use-cases",
-      "dictation-hotkey",
-      "dictation-demo",
-      "notes",
-      "assistant-hotkey",
-      "assistant-demo",
-      "setup-choice",
-    ]
-  );
-});
+const LOCAL_START = [
+  "permissions",
+  "languages",
+  "use-cases",
+  "dictation-hotkey",
+  "assistant-hotkey",
+  "setup-choice",
+];
 
-// The assistant demo offers to suggest meeting times from a connected calendar,
-// so the Notes step that connects one has to come first.
-test("notes precedes the assistant steps on the account route", async () => {
+test("the guided setup starts with device permissions for every saved auth state", async () => {
   const { getOnboardingRoute } = await load();
-  const route = getOnboardingRoute({ authPath: "account", setupMode: null, agentAllowed: true });
-  assert.ok(route.indexOf("notes") < route.indexOf("assistant-hotkey"));
-  assert.equal(route.indexOf("assistant-demo"), route.indexOf("assistant-hotkey") + 1);
+  for (const authPath of [null, "guest", "account"]) {
+    assert.deepEqual(
+      getOnboardingRoute({ authPath, setupMode: null, agentAllowed: true }),
+      LOCAL_START
+    );
+  }
 });
 
 test("macOS accessibility features stay deferred until the permissions screen", async () => {
@@ -56,16 +47,67 @@ test("onboarding permission checks use the resolved macOS feature gate", () => {
   );
 });
 
-test("guest flow keeps permissions and the hotkey before setup choice", async () => {
-  const { getOnboardingRoute } = await load();
-  // finalizeOnboarding registers the dictation hotkey on every path, so guests
-  // must still grant the mic and see the key they are getting.
-  assert.deepEqual(getOnboardingRoute({ authPath: "guest", setupMode: null, agentAllowed: true }), [
-    "auth",
-    "permissions",
+test("no onboarding route hands an older build's pending pick to the tray", () => {
+  // The tray applies a pending pick, switching cleanup and the assistant on, only
+  // while this flag is set. The local route has already written the user's own
+  // switches by then, so no finish may set it.
+  const source = readFileSync("src/components/OnboardingFlow.tsx", "utf8");
+  assert.doesNotMatch(source, /setItem\(\s*"localSetupPending"/);
+  assert.doesNotMatch(source, /hasPendingLocalModels/);
+});
+
+test("the local setup step is wired through its helpers", () => {
+  const source = readFileSync("src/components/OnboardingFlow.tsx", "utf8");
+  // Plan inputs and Proceed live in localSetupFlow.ts, where they are tested.
+  assert.match(source, /planLocalSetup\(\{/);
+  assert.match(
+    source,
+    /proceedWithLocalSetup\(localSetupPlan, handOff, async \(beforeContinue\) =>/
+  );
+  assert.match(
+    source,
+    /discardPendingLocalSetup\(\);\s*beforeContinue\(\);\s*goTo\("dictation-demo"\);/
+  );
+  // A policy refresh that is loading or failed keeps the plan the step is using.
+  assert.match(source, /const localSetupPlan = computedLocalSetupPlan \?\? latchedLocalSetupPlan;/);
+  assert.doesNotMatch(source, /buildLocalSetupPlan|applyLocalSetupSettings/);
+  // The space read runs only around the choice.
+  const steps = String.raw`currentStepId === "setup-choice" \|\| currentStepId === "local-setup"`;
+  assert.match(source, new RegExp(String.raw`useLocalSetupSpace\(\s*${steps}\s*\)`));
+  // A policy that couldn't be read gets a line instead of a blank card.
+  const placeholder = String.raw`<LocalSetupStepPlaceholder\s+message=\{policy\.status === "error"`;
+  assert.match(source, new RegExp(String.raw`${placeholder} \? t\("common\.policyUnresolved"\)`));
+  // Back during the finish would unmount the step and cancel what Proceed handed on.
+  assert.match(source, /backDisabled=\{isFinishing\}/);
+});
+
+test("each step asks for its window size, local setup a taller one", async () => {
+  const { getOnboardingWindowMode } = await load();
+  assert.equal(getOnboardingWindowMode("auth"), "compact");
+  assert.equal(getOnboardingWindowMode("permissions"), "compact");
+  assert.equal(getOnboardingWindowMode("local-setup"), "local-setup");
+  for (const id of [
+    "required-models",
+    "languages",
+    "use-cases",
     "dictation-hotkey",
+    "dictation-demo",
+    "notes",
+    "assistant-hotkey",
+    "assistant-demo",
     "setup-choice",
-  ]);
+    "byok-dictation",
+    "byok-assistant",
+  ]) {
+    assert.equal(getOnboardingWindowMode(id), "expanded", id);
+  }
+});
+
+test("onboarding sizes the window from the current step", () => {
+  const source = readFileSync("src/components/OnboardingFlow.tsx", "utf8");
+  // The plan placeholder renders on local-setup too, so it gets the same size.
+  assert.match(source, /const windowMode = getOnboardingWindowMode\(currentStepId\);/);
+  assert.match(source, /setOnboardingWindowMode\?\.\(windowMode\);\s*\}, \[windowMode\]\);/);
 });
 
 test("policy removes assistant states", async () => {
@@ -76,61 +118,108 @@ test("policy removes assistant states", async () => {
   assert.equal(route.at(-1), "setup-choice");
 });
 
-test("setup choice appends the selected two-stage route", async () => {
+test("the self-hosted route configures dictation and the assistant before practice", async () => {
   const { getOnboardingRoute } = await load();
   assert.deepEqual(
     getOnboardingRoute({ authPath: "guest", setupMode: "byok", agentAllowed: true }),
-    ["auth", "permissions", "dictation-hotkey", "setup-choice", "byok-dictation", "byok-assistant"]
+    [...LOCAL_START, "byok-dictation", "byok-assistant", "dictation-demo", "assistant-demo"]
+  );
+});
+
+test("local setup uses one model-selection screen before optional practice", async () => {
+  const { getOnboardingRoute } = await load();
+  assert.deepEqual(
+    getOnboardingRoute({ authPath: "guest", setupMode: "local", agentAllowed: true }),
+    [...LOCAL_START, "local-setup", "dictation-demo", "assistant-demo"]
   );
   assert.deepEqual(
-    getOnboardingRoute({ authPath: "account", setupMode: "local", agentAllowed: false }).slice(-2),
-    ["setup-choice", "local-dictation"]
+    getOnboardingRoute({ authPath: "account", setupMode: "local", agentAllowed: false }).slice(-3),
+    ["setup-choice", "local-setup", "dictation-demo"]
   );
 });
 
-test("a confirmed enterprise workspace ends the account route at the last guided step", async () => {
-  const { getOnboardingRoute } = await load();
+// Builds before this one saved sessions on the two-stage local picker, with the
+// picker's model draft in resume.localModels.
+test("a session saved on an old local stage resumes on local-setup", async () => {
+  const flow = await load();
+  const { createOnboardingSession, parseOnboardingSession, prepareLocalOnboardingSession } = flow;
+  for (const stepId of ["local-dictation", "local-assistant"]) {
+    const saved = {
+      ...createOnboardingSession(),
+      currentStepId: stepId,
+      authPath: "account",
+      setupMode: "local",
+      history: ["auth", "setup-choice"],
+    };
+    saved.resume = {
+      ...saved.resume,
+      localModels: { [stepId]: { provider: "qwen", modelId: "qwen3.5-4b-q4_k_m" } },
+    };
+    const parsed = parseOnboardingSession(JSON.stringify(saved));
+    assert.ok(parsed, `${stepId} still parses`);
+    assert.equal(parsed.currentStepId, stepId);
+    const migrated = prepareLocalOnboardingSession(parsed);
+    assert.equal(migrated.currentStepId, "local-setup");
+    assert.equal(migrated.authPath, "guest");
+    assert.deepEqual(migrated.history, ["setup-choice"]);
+  }
+});
+
+test("resuming a legacy hosted-provider session opens the local choice and clears obsolete drafts", async () => {
+  const { createOnboardingSession, prepareLocalOnboardingSession } = await load();
+  const session = {
+    ...createOnboardingSession(),
+    authPath: "account",
+    setupMode: "byok",
+    currentStepId: "byok-dictation",
+    history: ["auth", "permissions", "dictation-hotkey", "setup-choice"],
+    screenContextRequested: true,
+    permissionGuide: "screen-context",
+  };
+  session.resume.auth.email = "old@example.invalid";
+  session.resume.byok["byok-dictation"] = {
+    selectedProvider: "groq",
+    selectedModel: "whisper-large-v3",
+  };
+  session.resume.dictationHotkeyConfirmed = true;
+
+  const migrated = prepareLocalOnboardingSession(session);
+  assert.equal(migrated.currentStepId, "setup-choice");
+  assert.equal(migrated.setupMode, null);
+  assert.equal(migrated.permissionGuide, null);
+  assert.equal(migrated.screenContextRequested, false);
+  assert.equal(migrated.resume.auth.email, "");
+  assert.equal(migrated.resume.dictationHotkeyConfirmed, true);
+  assert.deepEqual(migrated.resume.byok, {});
+  assert.deepEqual(migrated.history, ["permissions", "dictation-hotkey", "setup-choice"]);
+});
+
+test("a resumed self-hosted draft stays on its own step", async () => {
+  const { createOnboardingSession, prepareLocalOnboardingSession } = await load();
+  const session = {
+    ...createOnboardingSession(),
+    setupMode: "byok",
+    selfHostedRequested: true,
+    currentStepId: "byok-assistant",
+  };
+  const draft = { baseUrl: "http://127.0.0.1:8080", customModel: "local" };
+  session.resume.byok["byok-assistant"] = draft;
+  const resumed = prepareLocalOnboardingSession(session);
+  assert.equal(resumed.currentStepId, "byok-assistant");
+  assert.deepEqual(resumed.resume.byok["byok-assistant"], draft);
+});
+
+test("legacy account and required-model options never bypass the local setup choice", async () => {
+  const { getOnboardingRoute, isSetupDecisionStep } = await load();
   const route = getOnboardingRoute({
     authPath: "account",
-    setupMode: null,
+    setupMode: "cloud",
     agentAllowed: true,
     skipSetupChoice: true,
+    requiredModelsPending: true,
   });
-  assert.equal(route.at(-1), "assistant-demo");
-  assert.equal(route.includes("setup-choice"), false);
-  assert.equal(
-    getOnboardingRoute({
-      authPath: "account",
-      setupMode: null,
-      agentAllowed: false,
-      skipSetupChoice: true,
-    }).at(-1),
-    "notes"
-  );
-});
-
-test("the setup decision step is whichever step precedes setup choice", async () => {
-  const { getOnboardingRoute, isSetupDecisionStep } = await load();
-  const withChoice = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: true,
-  });
-  assert.equal(isSetupDecisionStep("assistant-demo", withChoice), true);
-  assert.equal(isSetupDecisionStep("notes", withChoice), false);
-
-  const managed = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: false,
-    skipSetupChoice: true,
-  });
-  assert.equal(isSetupDecisionStep("notes", managed), true);
-
-  // Provider steps finish their own setup mode; workspace resolution is moot there.
-  const byok = getOnboardingRoute({ authPath: "account", setupMode: "byok", agentAllowed: true });
-  assert.equal(isSetupDecisionStep("byok-assistant", byok), false);
-  assert.equal(isSetupDecisionStep("assistant-demo", byok), true);
+  assert.deepEqual(route, LOCAL_START);
+  assert.equal(isSetupDecisionStep("assistant-hotkey", route), true);
 });
 
 test("notes starts with Skip and switches to Continue after a calendar connects", async () => {
@@ -252,10 +341,6 @@ test("v2 sessions retain safe within-step state without accepting secrets", asyn
     baseUrl: "https://self-hosted.example.com",
     customModel: "whisper-local",
   };
-  session.resume.localModels["local-assistant"] = {
-    provider: "qwen",
-    modelId: "qwen-9b",
-  };
 
   const serialized = JSON.stringify(session);
   assert.doesNotMatch(serialized, /password|apiKey|cortiClientId|clientSecret/);
@@ -270,11 +355,22 @@ test("v2 sessions retain safe within-step state without accepting secrets", asyn
   const malformedDraft = JSON.parse(serialized);
   malformedDraft.resume.auth.authMode = "unknown";
   malformedDraft.resume.byok["byok-dictation"].selectedProvider = 42;
-  malformedDraft.resume.localModels["local-assistant"].modelId = false;
   const parsed = parseOnboardingSession(JSON.stringify(malformedDraft));
   assert.equal(parsed.resume.auth.authMode, null);
   assert.equal(parsed.resume.byok["byok-dictation"].selectedProvider, "");
-  assert.equal(parsed.resume.localModels["local-assistant"].modelId, "");
+});
+
+test("an old build's local model drafts are parsed past and dropped", async () => {
+  const { createOnboardingSession, parseOnboardingSession } = await load();
+  const session = createOnboardingSession();
+  const old = JSON.parse(JSON.stringify(session));
+  old.resume.localModels = {
+    "local-dictation": { provider: "oruk", modelId: "orukeet-v0.1.0" },
+    "local-assistant": { provider: "qwen", modelId: false },
+  };
+  const parsed = parseOnboardingSession(JSON.stringify(old));
+  assert.deepEqual(parsed, session);
+  assert.equal("localModels" in parsed.resume, false);
 });
 
 test("an explicit restart clears every persisted route choice and returns to auth", async () => {
@@ -317,183 +413,71 @@ test("legacy numeric steps migrate conservatively", async () => {
   assert.equal(migrateLegacyOnboardingStep("999"), "setup-choice");
 });
 
-test("an off-route assistant step clamps to its neighbour, not the end of the route", async () => {
+test("a removed assistant step returns to its dictation counterpart", async () => {
   const { getOnboardingRoute, reconcileStepWithRoute } = await load();
-  // agentAllowed false is what a failed policy fetch produces, and it drops both
-  // assistant steps from the route. Clamping to route.at(-1) would teleport a
-  // user on either step to the route's end; the nearest neighbour keeps them
-  // where they were in the flow, with ties going to the earlier step.
-  const route = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: false,
-  });
-  assert.equal(route.includes("assistant-hotkey"), false);
-  assert.equal(reconcileStepWithRoute("assistant-hotkey", route), "notes");
-  assert.equal(reconcileStepWithRoute("assistant-demo", route), "setup-choice");
-  assert.equal(
-    reconcileStepWithRoute(
-      "assistant-demo",
-      getOnboardingRoute({
-        authPath: "account",
-        setupMode: null,
-        agentAllowed: false,
-        skipSetupChoice: true,
-      })
-    ),
-    "notes"
-  );
-
-  // With the agent allowed the steps are on the route and pass through untouched.
-  const agentRoute = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: true,
-  });
-  assert.equal(reconcileStepWithRoute("assistant-hotkey", agentRoute), "assistant-hotkey");
+  const route = getOnboardingRoute({ authPath: "guest", setupMode: "local", agentAllowed: false });
+  assert.equal(reconcileStepWithRoute("assistant-hotkey", route), "dictation-hotkey");
+  assert.equal(reconcileStepWithRoute("assistant-demo", route), "dictation-demo");
 });
 
-test("route helpers recover from ineligible steps", async () => {
+test("route helpers recover from obsolete auth and required-model steps", async () => {
   const { getNextOnboardingStep, getOnboardingRoute, reconcileStepWithRoute } = await load();
   const route = getOnboardingRoute({ authPath: "guest", setupMode: null, agentAllowed: true });
-  assert.equal(reconcileStepWithRoute("assistant-demo", route), "setup-choice");
+  assert.equal(reconcileStepWithRoute("required-models", route), "permissions");
   assert.equal(getNextOnboardingStep("auth", route), "permissions");
   assert.equal(getNextOnboardingStep("setup-choice", route), null);
 });
 
-test("progress counts every step the user is shown, once each", async () => {
+test("progress covers only expanded local setup steps", async () => {
   const { getOnboardingProgress, getOnboardingRoute } = await load();
-  const route = getOnboardingRoute({ authPath: "account", setupMode: null, agentAllowed: true });
+  const context = { authPath: "guest", setupMode: null, agentAllowed: true };
+  const base = getOnboardingRoute(context);
+  assert.equal(getOnboardingProgress("permissions", base), null);
+  assert.equal(getOnboardingProgress("auth", base), null);
+  assert.deepEqual(getOnboardingProgress("languages", base), { index: 0, total: 5 });
+  assert.deepEqual(getOnboardingProgress("setup-choice", base), { index: 4, total: 5 });
 
-  // The compact steps render in a frame with no footer, so they carry no row and
-  // must not inflate the total — landing on languages is "1 of 8", not "3 of 10".
-  assert.equal(getOnboardingProgress("auth", route), null);
-  assert.equal(getOnboardingProgress("permissions", route), null);
+  const local = getOnboardingRoute({ ...context, setupMode: "local" });
+  assert.deepEqual(getOnboardingProgress("local-setup", local), { index: 5, total: 8 });
+  assert.deepEqual(getOnboardingProgress("assistant-demo", local), { index: 7, total: 8 });
 
-  const counted = route.filter((stepId) => getOnboardingProgress(stepId, route) !== null);
-  assert.deepEqual(
-    counted.map((stepId) => getOnboardingProgress(stepId, route).index),
-    counted.map((_, index) => index)
-  );
-  assert.deepEqual(getOnboardingProgress("languages", route), { index: 0, total: 8 });
-  assert.deepEqual(getOnboardingProgress("setup-choice", route), { index: 7, total: 8 });
+  const selfHosted = getOnboardingRoute({ ...context, setupMode: "byok" });
+  assert.deepEqual(getOnboardingProgress("byok-assistant", selfHosted), { index: 6, total: 9 });
+  assert.equal(getOnboardingProgress("notes", selfHosted), null);
 });
 
-test("progress total tracks the conditional parts of the route", async () => {
-  const { getOnboardingProgress, getOnboardingRoute } = await load();
-  const context = { authPath: "account", setupMode: null, agentAllowed: true };
+test("the tray suppression predicate matches only a step that owns its downloads", async () => {
+  const { createOnboardingSession, isDownloadOwningOnboardingStepActive } = await load();
+  const on = (currentStepId) =>
+    isDownloadOwningOnboardingStepActive(
+      JSON.stringify({ ...createOnboardingSession(), currentStepId })
+    );
 
-  // Dropping the assistant pair shortens the row rather than leaving two dots
-  // that can never fill.
-  const noAgent = getOnboardingRoute({ ...context, agentAllowed: false });
-  assert.equal(getOnboardingProgress("languages", noAgent).total, 6);
-  assert.deepEqual(getOnboardingProgress("setup-choice", noAgent), { index: 5, total: 6 });
-
-  // Picking a non-cloud mode appends the provider pair, so the row grows by two
-  // at that moment and the last provider step is what fills it.
-  const byok = getOnboardingRoute({ ...context, setupMode: "byok" });
-  assert.deepEqual(getOnboardingProgress("setup-choice", byok), { index: 7, total: 10 });
-  assert.deepEqual(getOnboardingProgress("byok-assistant", byok), { index: 9, total: 10 });
-});
-
-test("progress counts only the guest steps that draw a footer", async () => {
-  const { getOnboardingProgress, getOnboardingRoute } = await load();
-  // auth and permissions are compact, so the pre-plan guest route counts
-  // dictation-hotkey and setup-choice: a two-dot row.
-  const guest = getOnboardingRoute({ authPath: "guest", setupMode: null, agentAllowed: true });
-  assert.deepEqual(getOnboardingProgress("setup-choice", guest), { index: 1, total: 2 });
-
-  const guestByok = getOnboardingRoute({
-    authPath: "guest",
-    setupMode: "byok",
-    agentAllowed: true,
-  });
-  assert.deepEqual(getOnboardingProgress("setup-choice", guestByok), { index: 1, total: 4 });
-
-  // An off-route step has no position to report.
-  assert.equal(getOnboardingProgress("notes", guestByok), null);
-});
-
-test("required models insert a blocking step right after auth — account path only", async () => {
-  const { getOnboardingRoute } = await load();
-  const route = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: true,
-    requiredModelsPending: true,
-  });
-  assert.deepEqual(route.slice(0, 3), ["auth", "required-models", "permissions"]);
-
-  // Guests never fetch a policy, so the gate cannot apply to them.
-  const guest = getOnboardingRoute({
-    authPath: "guest",
-    setupMode: null,
-    agentAllowed: true,
-    requiredModelsPending: true,
-  });
-  assert.equal(guest.includes("required-models"), false);
-
-  // Absent flag (older callers, nothing missing) leaves the route unchanged.
-  const noFlag = getOnboardingRoute({ authPath: "account", setupMode: null, agentAllowed: true });
-  assert.equal(noFlag.includes("required-models"), false);
-});
-
-test("required-models coexists with policy- and enterprise-shortened routes", async () => {
-  const { getOnboardingRoute } = await load();
-  const route = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: false,
-    requiredModelsPending: true,
-    skipSetupChoice: true,
-  });
-  assert.deepEqual(route.slice(0, 3), ["auth", "required-models", "permissions"]);
-  assert.equal(route.at(-1), "notes");
-  assert.equal(route.includes("assistant-hotkey"), false);
-});
-
-test("an off-route required-models session clamps to a neighbour step", async () => {
-  const { getOnboardingRoute, reconcileStepWithRoute } = await load();
-  // The session latch normally keeps the step on-route; if a stale session
-  // still names it after the requirement went away across restarts, it must
-  // clamp next to auth/permissions rather than teleport down the route.
-  const route = getOnboardingRoute({ authPath: "account", setupMode: null, agentAllowed: true });
-  assert.ok(["auth", "permissions"].includes(reconcileStepWithRoute("required-models", route)));
-});
-
-test("the required-models step is counted in progress", async () => {
-  const { getOnboardingProgress, getOnboardingRoute } = await load();
-  const route = getOnboardingRoute({
-    authPath: "account",
-    setupMode: null,
-    agentAllowed: true,
-    requiredModelsPending: true,
-  });
-  assert.deepEqual(getOnboardingProgress("required-models", route), { index: 0, total: 9 });
-  assert.deepEqual(getOnboardingProgress("languages", route), { index: 1, total: 9 });
-});
-
-test("the tray suppression predicate matches only an active required-models session", async () => {
-  const { createOnboardingSession, isRequiredModelsOnboardingStepActive } = await load();
-
-  assert.equal(isRequiredModelsOnboardingStepActive(null), false);
-  assert.equal(isRequiredModelsOnboardingStepActive("not json"), false);
-
-  const session = createOnboardingSession();
-  assert.equal(isRequiredModelsOnboardingStepActive(JSON.stringify(session)), false);
-  assert.equal(
-    isRequiredModelsOnboardingStepActive(
-      JSON.stringify({ ...session, currentStepId: "required-models" })
-    ),
-    true
-  );
+  assert.equal(isDownloadOwningOnboardingStepActive(null), false);
+  assert.equal(isDownloadOwningOnboardingStepActive("not json"), false);
+  assert.equal(on("auth"), false);
+  assert.equal(on("required-models"), true);
   // A completed/cleared session (the post-onboarding state) never suppresses.
-  assert.equal(
-    isRequiredModelsOnboardingStepActive(
-      JSON.stringify({ ...session, currentStepId: "permissions" })
-    ),
-    false
-  );
+  assert.equal(on("permissions"), false);
+});
+
+test("tray ignores local-setup downloads", async () => {
+  const { createOnboardingSession, isDownloadOwningOnboardingStepActive } = await load();
+  const session = { ...createOnboardingSession(), authPath: "account", setupMode: "local" };
+  const on = (currentStepId) =>
+    isDownloadOwningOnboardingStepActive(JSON.stringify({ ...session, currentStepId }));
+  assert.equal(on("local-setup"), true);
+  assert.equal(on("notes"), false);
+  assert.equal(on("setup-choice"), false);
+});
+
+test("SetupChoiceStep sends Local straight to its step, with no warning dialog", () => {
+  const source = readFileSync("src/components/onboarding/SetupChoiceStep.tsx", "utf8");
+  assert.doesNotMatch(source, /warnings\.local|warnings\.\$\{/);
+  assert.doesNotMatch(source, /onboarding-setup-warning-hero/);
+  assert.match(source, /onClick=\{\(\) => onSelect\("local"\)\}/);
+  assert.match(source, /setupChoice\.local\.features\.setup/);
+  assert.doesNotMatch(source, /setupChoice\.local\.features\.models/);
 });
 
 test("a session written before the resume flags infers its hotkey confirmations", async () => {
@@ -531,4 +515,37 @@ test("a session written before the resume flags infers its hotkey confirmations"
   // Nothing else is inferred — a demo the user never ran must still gate Continue.
   assert.equal(past.resume.dictationDemoCompleted, false);
   assert.equal(past.resume.assistantDemoCompleted, false);
+});
+
+test("the required-models step opens once nothing is left to wait for", async () => {
+  const { canLeaveRequiredModels } = await load();
+  const check = (loading, missing, refused) =>
+    canLeaveRequiredModels({ loading, missing, refused });
+  assert.equal(check(true, [], []), false);
+  assert.equal(check(false, ["base"], []), false);
+  assert.equal(check(false, [], []), true);
+  // The organization refused this model, so waiting for it would never end.
+  assert.equal(check(false, ["base"], ["base"]), true);
+  assert.equal(check(false, ["base", "small"], ["base"]), false);
+});
+
+test("a rotated token keeps a step that owns downloads up through the policy refetch", async () => {
+  const { createOnboardingSession, keepsOnboardingStepThroughPolicyRefetch } = await load();
+  const session = (currentStepId) =>
+    JSON.stringify({ ...createOnboardingSession(), currentStepId });
+  const keeps = (overrides) =>
+    keepsOnboardingStepThroughPolicyRefetch({
+      showOnboarding: true,
+      sessionValue: session("local-setup"),
+      policyAccountId: "account",
+      lastResolvedAccountId: "account",
+      ...overrides,
+    });
+
+  assert.equal(keeps({}), true);
+  assert.equal(keeps({ sessionValue: session("required-models") }), true);
+  assert.equal(keeps({ sessionValue: session("notes") }), false, "nothing to lose elsewhere");
+  assert.equal(keeps({ showOnboarding: false }), false);
+  assert.equal(keeps({ lastResolvedAccountId: "someone-else" }), false, "another account reloads");
+  assert.equal(keeps({ policyAccountId: null, lastResolvedAccountId: null }), false, "suspended");
 });

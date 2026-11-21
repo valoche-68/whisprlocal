@@ -78,6 +78,39 @@ test("a dictation arriving during idle shutdown waits before restarting", async 
   assert.equal(manager.gpuSignature, "gpu:vulkan:default");
 });
 
+test("the first transcription's requested model and VAD are checked after prewarm", async (t) => {
+  const manager = runningManager(t);
+  const start = manager._doStart;
+  const releasePrewarm = Promise.withResolvers();
+  const calls = [];
+  manager._doStart = async (modelPath, options) => {
+    calls.push({ modelPath, vadEnabled: options.vadEnabled });
+    if (calls.length === 1) await releasePrewarm.promise;
+    await start(modelPath, options);
+  };
+
+  const prewarm = manager.start("/prewarm.bin", { useCuda: true });
+  const requested = {
+    useCuda: true,
+    vadEnabled: true,
+    vadModelPath: "/vad.bin",
+  };
+  const firstUse = manager.start("/requested.bin", requested);
+  const sameRequest = manager.start("/requested.bin", requested);
+  assert.equal(calls.length, 1);
+
+  releasePrewarm.resolve();
+  await Promise.all([prewarm, firstUse, sameRequest]);
+
+  assert.deepEqual(calls, [
+    { modelPath: "/prewarm.bin", vadEnabled: undefined },
+    { modelPath: "/requested.bin", vadEnabled: true },
+  ]);
+  assert.equal(manager.modelPath, "/requested.bin");
+  assert.equal(manager.vadSignature, WhisperServerManager.getVadSignature(requested));
+  assert.equal(manager.useCuda, true);
+});
+
 test("overlapping transcriptions hold memory until the last request ends", async (t) => {
   const manager = runningManager(t);
   await manager.start("/model.bin");

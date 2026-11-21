@@ -543,8 +543,10 @@ class WhisperServerManager extends EventEmitter {
 
   async _policyAllowedStart(modelPath, options = {}) {
     if (this.idleStopPromise) await this.idleStopPromise;
+    // A pending prewarm can be loading a different model or VAD configuration.
+    // Once it settles, check what actually loaded before using that server.
+    while (this.startupPromise) await this.startupPromise;
     this.clearIdleTimer();
-    if (this.startupPromise) return this.startupPromise;
 
     // Remember the options so a wake re-warm can reload with the same VAD/thread
     // signature and survive start()'s no-op guard on the next dictation. See #766.
@@ -572,15 +574,14 @@ class WhisperServerManager extends EventEmitter {
       return;
     }
 
-    if (this.process || this.isRemote) {
-      await this.stop();
-    }
-
-    this.isRemote = false;
-    this.hostname = "127.0.0.1";
-    this.vadSignature = nextVadSignature;
-    this.threadSignature = nextThreadSignature;
-    this.startupPromise = this._doStart(modelPath, { ...options, threadResolution });
+    this.startupPromise = (async () => {
+      if (this.process || this.isRemote) await this.stop();
+      this.isRemote = false;
+      this.hostname = "127.0.0.1";
+      this.vadSignature = nextVadSignature;
+      this.threadSignature = nextThreadSignature;
+      await this._doStart(modelPath, { ...options, threadResolution });
+    })();
     try {
       await this.startupPromise;
     } finally {

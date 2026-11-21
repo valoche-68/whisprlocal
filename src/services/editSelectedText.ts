@@ -1,9 +1,9 @@
 import ReasoningService from "./ReasoningService";
 import type { ReasoningConfig } from "./BaseReasoningService";
-import { providerSupportsImages } from "./ai/inferenceProviders";
+import { cancelRequest, trackRequest } from "./ai/requestCancellation";
+import i18n from "../i18n";
 import { getSettings } from "../stores/settingsStore";
 import { resolveChatStreamingInference } from "../helpers/dictationAgentInference";
-import { resolveModeProvider } from "../helpers/dictationRouting";
 import {
   buildLocalSelectionEditSystemPrompt,
   buildLocalSelectionEditUserPrompt,
@@ -15,11 +15,9 @@ import {
   isSelectionQuestionResponse,
   SELECTION_EDIT_RESPONSE_FORMAT,
 } from "../helpers/selectionEditing";
-import { appendScreenContextSuffix, resolvePrompt } from "../config/prompts";
+import { resolvePrompt } from "../config/prompts";
 import { getDictionaryHintWords } from "../utils/snippets";
 import { getAgentName } from "../utils/agentName";
-import { usePolicyStore } from "../stores/policyStore";
-import { isScreenContextAllowed } from "../stores/policyRules";
 import { resolveDictationToneStyle, type ToneAppCategory } from "../config/toneStyle";
 import { selectionEditToneSentence } from "../config/prompts/toneStyle";
 import type { ChatImageAttachment } from "../components/chat/types";
@@ -29,7 +27,6 @@ export async function editSelectedText(
   instruction: string,
   selectedText: string,
   {
-    attachment,
     appCategory,
     signal,
   }: {
@@ -40,56 +37,48 @@ export async function editSelectedText(
 ): Promise<string | null> {
   const settings = getSettings();
   const agentName = getAgentName();
-  const { config: target, attachScreenContext } = resolveChatStreamingInference(settings, {
+  const { config: target } = resolveChatStreamingInference(settings, {
     inferenceScope: "dictationAgent",
-    hasScreenContext: Boolean(attachment),
-    isProviderImageWired: providerSupportsImages,
   });
-  const provider = resolveModeProvider({
-    isCloud: settings.isSignedIn && target.mode === "openwhispr",
-    mode: target.mode,
-    provider: target.provider,
-  });
-  const local = provider === "local";
-  const screenContext =
-    attachment && attachScreenContext && isScreenContextAllowed(usePolicyStore.getState())
-      ? { data: attachment.image, mediaType: attachment.mediaType }
-      : undefined;
-  // Cloud's vision chain can omit a nonce, and /reason does not expose its
-  // finish reason. JSON rejects interrupted strings without server finish metadata.
-  const usesJsonResponse = local || (provider === "openwhispr" && Boolean(screenContext));
-  const marker = usesJsonResponse ? "" : createSelectionCompletionMarker();
+  const local = target.mode === "local";
+  const lanUrl = target.mode === "self-hosted" ? target.remoteUrl?.trim() : undefined;
+  if (!local && !lanUrl) {
+    throw Object.assign(new Error(i18n.t("notes.actions.errors.noEndpoint")), {
+      code: "LOCAL_ONLY",
+    });
+  }
+  const marker = local ? "" : createSelectionCompletionMarker();
   const dictionary = getDictionaryHintWords(settings);
   const toneSentence = settings.toneStyleEnabled
     ? selectionEditToneSentence(resolveDictationToneStyle(settings.toneStyles, appCategory ?? null))
     : "";
-  const cloudBasePrompt = [
-    resolvePrompt("dictationAgent", {
-      agentName,
-      language: settings.preferredLanguage,
-      customDictionary: dictionary,
-      uiLanguage: settings.uiLanguage,
-    }),
-    toneSentence,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  const systemPrompt = usesJsonResponse
+  const systemPrompt = local
     ? buildLocalSelectionEditSystemPrompt({
-        customPrompt: local
-          ? settings.customPrompts.dictationAgent.replaceAll("{{agentName}}", agentName)
-          : cloudBasePrompt,
-        dictionary: local ? dictionary : [],
-        toneSentence: local ? toneSentence : "",
+        customPrompt: settings.customPrompts.dictationAgent.replaceAll("{{agentName}}", agentName),
+        dictionary,
+        toneSentence,
       })
-    : buildSelectionEditSystemPrompt(cloudBasePrompt, marker);
+    : buildSelectionEditSystemPrompt(
+        [
+          resolvePrompt("dictationAgent", {
+            agentName,
+            language: settings.preferredLanguage,
+            customDictionary: dictionary,
+            uiLanguage: settings.uiLanguage,
+          }),
+          toneSentence,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        marker
+      );
+  const requestId = crypto.randomUUID();
   const config: ReasoningConfig = {
     inferenceScope: "dictationAgent",
     requiresAgent: true,
-    provider,
-    lanUrl: target.mode === "self-hosted" ? target.remoteUrl : undefined,
-    baseUrl: target.mode === "providers" && provider === "custom" ? target.cloudBaseUrl : undefined,
-    customApiKey: target.customApiKey,
+    provider: local ? "local" : "lan",
+    lanUrl,
+    customApiKey: local ? undefined : target.customApiKey,
     disableThinking: local || target.disableThinking,
     reasoningEffort: target.reasoningEffort,
     systemPrompt,
@@ -100,47 +89,31 @@ export async function editSelectedText(
     ...(local
       ? { responseFormat: { ...SELECTION_EDIT_RESPONSE_FORMAT, type: "json_object" as const } }
       : {}),
-    requestId: crypto.randomUUID(),
+    requestId,
   };
-  if (screenContext) {
-    config.screenContext = screenContext;
-    const screenPrompt = appendScreenContextSuffix(cloudBasePrompt, settings.uiLanguage);
-    config.systemPrompt = local
-      ? appendScreenContextSuffix(systemPrompt, settings.uiLanguage)
-      : usesJsonResponse
-        ? buildLocalSelectionEditSystemPrompt({ customPrompt: screenPrompt })
-        : buildSelectionEditSystemPrompt(screenPrompt, marker);
-  }
   const cancel = (): void => {
-    if (local) void window.electronAPI?.cancelLocalReasoning?.(config.requestId);
+    cancelRequest(requestId);
+    if (local) void window.electronAPI?.cancelLocalReasoning?.(requestId);
   };
   signal.throwIfAborted();
+  const release = trackRequest(requestId);
   signal.addEventListener("abort", cancel, { once: true });
-  const run = (runConfig: ReasoningConfig): Promise<string> =>
-    ReasoningService.processText(
-      usesJsonResponse
+  try {
+    const result = await ReasoningService.processText(
+      local
         ? buildLocalSelectionEditUserPrompt(instruction, selectedText)
         : buildSelectionEditUserPrompt(instruction, selectedText),
       target.model,
       agentName,
-      runConfig
+      config
     );
-  try {
-    let result: string;
-    try {
-      result = await run(config);
-    } catch (error) {
-      // As with the wake word, a screenshot the model or transport rejects
-      // must not cost the edit: run it once more without the screenshot.
-      if (!config.screenContext || signal.aborted) throw error;
-      result = await run({ ...config, screenContext: undefined, systemPrompt });
-    }
     signal.throwIfAborted();
     if (isSelectionQuestionResponse(result, marker)) return null;
-    return usesJsonResponse
+    return local
       ? extractLocalSelectionEditReplacement(result)
       : extractSelectionEditReplacement(result, marker);
   } finally {
     signal.removeEventListener("abort", cancel);
+    release();
   }
 }

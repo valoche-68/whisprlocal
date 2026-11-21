@@ -1601,6 +1601,7 @@
     "managedByOrg": "部分设置由您的组织管理。",
     "managedAccount": "受管理的账户",
     "groups": {
+      "app": "应用",
       "account": "账户",
       "workspace": "工作区",
       "aiModels": "AI 模型",

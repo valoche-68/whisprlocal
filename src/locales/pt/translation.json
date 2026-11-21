@@ -1580,6 +1580,7 @@
     "managedByOrg": "Algumas configurações são gerenciadas pela sua organização.",
     "managedAccount": "Conta gerenciada",
     "groups": {
+      "app": "Aplicativo",
       "account": "Conta",
       "workspace": "Espaço de trabalho",
       "aiModels": "Modelos de IA",

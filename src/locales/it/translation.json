@@ -1601,6 +1601,7 @@
     "managedByOrg": "Alcune impostazioni sono gestite dalla tua organizzazione.",
     "managedAccount": "Account gestito",
     "groups": {
+      "app": "App",
       "account": "Account",
       "workspace": "Area di lavoro",
       "aiModels": "Modelli IA",

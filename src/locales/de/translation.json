@@ -1695,6 +1695,7 @@
     "managedByOrg": "Einige Einstellungen werden von Ihrer Organisation verwaltet.",
     "managedAccount": "Verwaltetes Konto",
     "groups": {
+      "app": "App",
       "account": "Konto",
       "workspace": "Workspace",
       "aiModels": "KI-Modelle",

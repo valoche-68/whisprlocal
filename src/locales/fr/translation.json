@@ -1695,6 +1695,7 @@
     "managedByOrg": "Certains paramètres sont gérés par votre organisation.",
     "managedAccount": "Compte géré",
     "groups": {
+      "app": "Application",
       "account": "Compte",
       "workspace": "Espace de travail",
       "aiModels": "Modèles IA",

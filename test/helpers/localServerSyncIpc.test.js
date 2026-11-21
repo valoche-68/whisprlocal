@@ -5,6 +5,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const Module = require("node:module");
+const { setConfigured } = require("../../src/local/networkPolicy.cjs");
+const { createUploadCancelRegistry } = require("../../src/helpers/uploadCancelRegistry");
 
 const handlersModulePath = require.resolve("../../src/helpers/ipcHandlers");
 const originalLoad = Module._load;
@@ -41,7 +43,10 @@ const electronStub = {
     requestSingleInstanceLock: () => true,
   },
   ipcMain: {
-    handle: (channel, handler) => handlers.set(channel, handler),
+    handle(channel, handler) {
+      assert.equal(handlers.has(channel), false, `Duplicate IPC handler: ${channel}`);
+      handlers.set(channel, handler);
+    },
     on: () => {},
     removeHandler: () => {},
   },
@@ -218,4 +223,105 @@ test("a downloaded GPU binary requests an idle stop that preferences cannot canc
   assert.equal(result.success, true);
   assert.equal(stop.mock.callCount(), 1);
   assert.deepEqual(stop.mock.calls[0].arguments, [{ cancelOnReuse: false }]);
+});
+
+
+test("meeting IPC refuses remote providers before starting a stream", async () => {
+  for (const action of ["prepare", "start"]) {
+    const result = await handlers.get(`meeting-transcription-${action}`)(
+      {},
+      { provider: "openai-realtime", mode: "byok" }
+    );
+    assert.equal(result.success, false);
+    assert.equal(result.code, "LOCAL_ONLY");
+  }
+  const result = await handlers.get("meeting-transcription-prepare")({}, { provider: "local" });
+  assert.equal(result.success, true);
+});
+
+test("retry sends audio only to a configured self-hosted server with the stored token", async (t) => {
+  const endpoint = "https://speech.example.test/v1";
+  const row = { id: 1, audio_duration_ms: 100, text: "" };
+  target.databaseManager = {
+    activeAccountId: null,
+    getTranscriptionById: () => row,
+    updateTranscriptionText: (id, text) => { row.text = text; },
+    updateTranscriptionStatus() {},
+    updateTranscriptionAudio() {},
+  };
+  target.environmentManager = { getCustomTranscriptionKey: () => "saved-token" };
+  target.audioStorageManager = { getAudioBuffer: () => Buffer.from("test audio") };
+  t.after(() => {
+    setConfigured([]);
+    delete target.databaseManager;
+    delete target.environmentManager;
+    delete target.audioStorageManager;
+  });
+  const fetch = t.mock.method(electronStub.net, "fetch", async () => ({
+    ok: true,
+    json: async () => ({ text: "bonjour" }),
+  }));
+  const retry = handlers.get("retry-transcription");
+  const settings = {
+    transcriptionMode: "self-hosted",
+    remoteTranscriptionUrl: endpoint,
+    remoteTranscriptionModel: "whisper",
+    customTranscriptionApiKey: "stale-renderer-key",
+    cloudTranscriptionMode: "openwhispr",
+    managed: { kind: "error", message: "obsolete provider" },
+  };
+  const blocked = await retry({}, 1, settings);
+  assert.equal(blocked.success, false);
+  assert.equal(fetch.mock.callCount(), 0);
+  setConfigured([endpoint]);
+  const result = await retry({}, 1, settings);
+  assert.equal(result.success, true);
+  assert.equal(result.transcription.text, "bonjour");
+  assert.equal(fetch.mock.callCount(), 1);
+  const [url, options] = fetch.mock.calls[0].arguments;
+  assert.equal(url, endpoint + "/audio/transcriptions");
+  assert.equal(options.headers.Authorization, "Bearer saved-token");
+  assert.equal(options.redirect, "error");
+  assert.equal(options.body.get("model"), "whisper");
+  assert.equal(await options.body.get("file").text(), "test audio");
+});
+
+test("file import ignores stale provider settings and sends audio only to the configured server", async (t) => {
+  const endpoint = "https://speech.example.test/v1";
+  const audioPath = path.join(userDataDirectory, "audio.wav");
+  fs.writeFileSync(audioPath, "test upload");
+  target._uploadCancelRegistry = createUploadCancelRegistry();
+  target.environmentManager = { getCustomTranscriptionKey: () => "saved-token" };
+  t.after(() => {
+    setConfigured([]);
+    delete target._uploadCancelRegistry;
+    delete target.environmentManager;
+    fs.rmSync(audioPath, { force: true });
+  });
+  const fetch = t.mock.method(electronStub.net, "fetch", async () => ({
+    ok: true,
+    json: async () => ({ text: "bonjour" }),
+  }));
+  const transcribe = handlers.get("transcribe-audio-file-byok");
+  const options = {
+    filePath: audioPath,
+    requestId: "upload-1",
+    transcriptionMode: "self-hosted",
+    remoteTranscriptionUrl: endpoint,
+    remoteTranscriptionModel: "whisper",
+    provider: "openai",
+    apiKey: "stale-key",
+    managed: { kind: "error", message: "obsolete provider" },
+  };
+  assert.equal((await transcribe({}, options)).success, false);
+  assert.equal(fetch.mock.callCount(), 0);
+  setConfigured([endpoint]);
+  const result = await transcribe({}, options);
+  assert.deepEqual(result, { success: true, text: "bonjour" });
+  assert.equal(fetch.mock.callCount(), 1);
+  const [url, request] = fetch.mock.calls[0].arguments;
+  assert.equal(url, endpoint + "/audio/transcriptions");
+  assert.equal(request.headers.Authorization, "Bearer saved-token");
+  assert.equal(request.body.get("file").type, "audio/wav");
+  assert.equal(await request.body.get("file").text(), "test upload");
 });

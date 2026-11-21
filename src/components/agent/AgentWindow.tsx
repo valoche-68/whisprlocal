@@ -505,7 +505,6 @@ export default function AgentWindow() {
       const current = () => !controller.signal.aborted && !dropped();
       try {
         const replacement = await editSelectedText(text, target.text, {
-          attachment: extras.attachment,
           appCategory: target.appCategory,
           signal: controller.signal,
         });

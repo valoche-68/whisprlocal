@@ -709,7 +709,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // xAI / Mistral transcription proxies (keys handled by the manifest bridge)
   proxyXaiTranscription: (data) => ipcRenderer.invoke("proxy-xai-transcription", data),
   proxyMistralTranscription: (data) => ipcRenderer.invoke("proxy-mistral-transcription", data),
-  getTinfoilChatModels: () => ipcRenderer.invoke("get-tinfoil-chat-models"),
   proxyTinfoilTranscription: (data) => ipcRenderer.invoke("proxy-tinfoil-transcription", data),
 
   // Custom endpoint API keys
@@ -737,29 +736,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   checkLocalReasoningAvailable: () => ipcRenderer.invoke("check-local-reasoning-available"),
   getLocalContextBudget: (modelId) => ipcRenderer.invoke("get-local-context-budget", modelId),
   cancelLocalReasoning: (requestId) => ipcRenderer.invoke("cancel-local-reasoning", requestId),
-  onEnterpriseStreamPart: registerListener(
-    "enterprise-stream-part",
-    (callback) => (_event, payload) => callback(payload)
-  ),
-  onManagedEnterpriseConfigChanged: registerListener(
-    "managed-enterprise-config-changed",
-    (callback) => (_event, snapshot) => callback(snapshot)
-  ),
-  managedTranscribe: (data) => ipcRenderer.invoke("managed-transcribe", data),
-  getPendingEnterpriseAudioTest: (consume = false) =>
-    ipcRenderer.invoke("get-pending-enterprise-audio-test", consume),
-  claimEnterpriseAudioTest: () => ipcRenderer.invoke("claim-enterprise-audio-test"),
-  onEnterpriseAudioTestRequested: registerListener(
-    "enterprise-audio-test-requested",
-    (callback) => () => callback()
-  ),
-  enterpriseAudioImportBootstrap: (data) =>
-    ipcRenderer.invoke("enterprise-audio-import-bootstrap", data),
-  enterpriseAudioStatus: (data) => ipcRenderer.invoke("enterprise-audio-status", data),
-  enterpriseAudioSaveCredential: (data) =>
-    ipcRenderer.invoke("enterprise-audio-save-credential", data),
-  enterpriseAudioTest: (data) => ipcRenderer.invoke("enterprise-audio-test", data),
-
   // llama.cpp
   llamaCppCheck: () => ipcRenderer.invoke("llama-cpp-check"),
   llamaCppInstall: () => ipcRenderer.invoke("llama-cpp-install"),
@@ -826,7 +802,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     "auth-token-state-changed",
     (callback) => (_event, state) => callback(state)
   ),
-  getSttConfig: () => ipcRenderer.invoke("get-stt-config"),
   getWorkspacePolicy: (accountId, expectedAuthGeneration) =>
     ipcRenderer.invoke("get-workspace-policy", accountId, expectedAuthGeneration),
   onWorkspacePolicyChanged: (callback) => {

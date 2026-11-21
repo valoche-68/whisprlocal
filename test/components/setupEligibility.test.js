@@ -11,9 +11,6 @@ const {
 
 const load = () => import("../../src/components/onboarding/setupEligibility.ts");
 
-const TRANSCRIPTION_PROVIDERS = [{ id: "openai" }, { id: "groq" }];
-const LLM_PROVIDERS = [{ id: "anthropic" }, { id: "groq" }];
-
 function managedPolicy({ transcription, llm }) {
   return {
     status: "managed",
@@ -39,30 +36,20 @@ function availability(policy, overrides = {}) {
     getOnboardingSetupAvailability({
       policy,
       agentAllowed: true,
-      transcriptionProviders: TRANSCRIPTION_PROVIDERS,
-      llmProviders: LLM_PROVIDERS,
       supportedLocalTranscriptionModels: [{ id: "base" }],
       ...overrides,
     })
   );
 }
 
-test("BYOK requires a usable provider for both stages", async () => {
-  const base = {
-    transcription: { allowedModes: ["providers"], allowedByokProviders: [] },
-    llm: {
-      allowedModes: ["providers"],
-      allowedByokProviders: [],
-      allowedEnterpriseProviders: [],
-    },
-  };
-  assert.equal((await availability(managedPolicy(base))).byok, false);
-
-  base.transcription.allowedByokProviders = ["groq"];
-  assert.equal((await availability(managedPolicy(base))).byok, false);
-
-  base.llm.allowedByokProviders = ["anthropic"];
-  assert.equal((await availability(managedPolicy(base))).byok, true);
+test("hosted provider and cloud policies do not offer setup modes", async () => {
+  const result = await availability(
+    managedPolicy({
+      transcription: { allowedModes: ["providers", "openwhispr"], allowedByokProviders: ["groq"] },
+      llm: { allowedModes: ["providers", "openwhispr"], allowedByokProviders: ["anthropic"] },
+    })
+  );
+  assert.deepEqual(result, { local: false, selfHosted: false });
 });
 
 test("self-hosted eligibility is independent from hosted provider mode", async () => {
@@ -77,7 +64,6 @@ test("self-hosted eligibility is independent from hosted provider mode", async (
     })
   );
 
-  assert.equal(result.byok, false);
   assert.equal(result.selfHosted, true);
 });
 
@@ -93,9 +79,7 @@ test("availability reports no setup when policy permits no onboarding mode", asy
 
   const result = await availability(policy);
   assert.deepEqual(result, {
-    cloud: false,
     local: false,
-    byok: false,
     selfHosted: false,
   });
 });
@@ -116,17 +100,13 @@ test("dictation-only policies ignore LLM availability when the agent is disabled
 
   // Only Local can skip the assistant: its step shows the blocked notice and a Skip.
   assert.deepEqual(await availability(policy, { agentAllowed: true }), {
-    cloud: false,
     local: true,
-    byok: false,
     selfHosted: false,
   });
 
   const result = await availability(policy, { agentAllowed: false });
   assert.deepEqual(result, {
-    cloud: true,
     local: true,
-    byok: true,
     selfHosted: true,
   });
 });
@@ -207,7 +187,6 @@ async function renderSetupChoice(t, policy, capability) {
         export function useTranslation() { return { t }; }
         export const initReactI18next = { type: "3rdParty", init() {} };
       `,
-      "/OnboardingShell": `export function BrandMark() { return null; }`,
     },
   });
   const { usePolicyStore } = await vite.ssrLoadModule("/stores/policyStore.ts");
@@ -218,10 +197,8 @@ async function renderSetupChoice(t, policy, capability) {
   let tree;
   const selected = [];
   const props = {
-    isSignedIn: true,
     agentAllowed: true,
     onSelect: (mode) => selected.push(mode),
-    onRequestAuthentication() {},
   };
   function Harness() {
     tree = SetupChoiceStep(props);
@@ -246,7 +223,10 @@ async function renderSetupChoice(t, policy, capability) {
       return null;
     }
     if (!node || typeof node !== "object") return null;
-    return node.props?.children === text ? node : findByText(node.props?.children, text);
+    const children = node.props?.children;
+    return children === text || (Array.isArray(children) && children.includes(text))
+      ? node
+      : findByText(children, text);
   };
   const press = (text) => React.act(async () => findByText(tree, text).props.onClick());
   return {
@@ -289,18 +269,24 @@ test("a device that can't run Parakeet then loses a Parakeet-only Local", async 
   assert.equal(step.explainsLocal(), true, "the member learns why no setup is left");
 });
 
-test("a Local card the policy took away is explained beside the setups that remain", async (t) => {
+test("the only other choice goes directly to self-hosted setup", async (t) => {
   const step = await renderSetupChoice(
     t,
     managedPolicy({
-      transcription: { allowedModes: ["local", "openwhispr"], allowedLocalModels: [] },
-      llm: { allowedModes: ["openwhispr"] },
+      transcription: {
+        allowedModes: ["local", "self-hosted", "openwhispr"],
+        allowedLocalModels: [],
+        allowedByokProviders: ["custom"],
+      },
+      llm: { allowedModes: ["self-hosted", "openwhispr"], allowedByokProviders: ["custom"] },
     }),
     Promise.resolve({ supported: true })
   );
   assert.equal(step.localCard(), false);
   assert.equal(step.unavailable(), false);
   assert.equal(step.explainsLocal(), true);
+  await step.press("onboarding.rehaul.setupChoice.moreOptions.selfHosted.title");
+  assert.deepEqual(step.selected, ["byok"]);
 });
 
 test("a member with Local available gets no explanation", async (t) => {

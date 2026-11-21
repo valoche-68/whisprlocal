@@ -32,12 +32,16 @@ function isAllowed(value) {
   } catch {
     return false;
   }
-  const h = url.hostname.toLowerCase();
+  const h = url.hostname.toLowerCase().replace(/\.+$/, "");
   if (isOfficialHost(h)) return false;
-  if (
-    h === "raw.githubusercontent.com" &&
-    /^\/OpenWhispr\/model-registry(?:\/|$)/i.test(url.pathname)
-  ) return false;
+  const registryPath = /^\/(?:repos\/)?openwhispr\/model-registry(?:\/|$)/i;
+  if (["github.com", "api.github.com", "raw.githubusercontent.com"].includes(h)) {
+    try {
+      if (registryPath.test(decodeURIComponent(url.pathname))) return false;
+    } catch {
+      return false;
+    }
+  }
   if (["file:", "data:", "blob:", "devtools:", "chrome-extension:"].includes(url.protocol))
     return true;
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return false;
@@ -79,9 +83,11 @@ function audit(url, allowed, transport) {
     /* Auditing must not affect the request. No paths, query strings or credentials. */
   }
 }
-function assertAllowed(url) {
-  audit(url, isAllowed(String(url)), "node");
-  if (!isAllowed(String(url)))
+function assertAllowed(url, { configuredOnly = false } = {}) {
+  const destination = String(url);
+  const allowed = isAllowed(destination) && (!configuredOnly || configured.has(new URL(destination).origin));
+  audit(destination, allowed, "node");
+  if (!allowed)
     throw Object.assign(new Error("WhisprLocal blocked an unconfigured network destination"), {
       code: "NETWORK_POLICY",
     });

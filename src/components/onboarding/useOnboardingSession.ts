@@ -6,32 +6,23 @@ import {
   createOnboardingSession,
   migrateLegacyOnboardingStep,
   parseOnboardingSession,
-  type OnboardingAuthPath,
+  prepareLocalOnboardingSession,
   type OnboardingSession,
   type OnboardingSetupMode,
   type OnboardingStepId,
 } from "./flow";
 
 function readInitialSession(): OnboardingSession {
-  if (typeof window === "undefined") return createOnboardingSession();
-
-  const stored = parseOnboardingSession(localStorage.getItem(ONBOARDING_SESSION_KEY));
-  if (stored) return stored;
-
   const session = createOnboardingSession();
+  if (typeof window === "undefined") return prepareLocalOnboardingSession(session);
+
+  const saved = parseOnboardingSession(localStorage.getItem(ONBOARDING_SESSION_KEY));
+  if (saved) return prepareLocalOnboardingSession(saved);
+
   session.currentStepId = migrateLegacyOnboardingStep(
     localStorage.getItem(LEGACY_ONBOARDING_STEP_KEY)
   );
-  if (localStorage.getItem("authenticationSkipped") === "true") {
-    session.authPath = "guest";
-  } else if (session.currentStepId !== "auth") {
-    // A legacy save mid-flow means the auth step was already behind the user.
-    // Left null, getOnboardingRoute returns ["auth"] and the reconcile clamp
-    // overwrites the migrated step before anything can restore it — the one
-    // group the legacy map exists for would always restart from scratch.
-    session.authPath = "account";
-  }
-  return session;
+  return prepareLocalOnboardingSession(session);
 }
 
 export function useOnboardingSession() {
@@ -39,8 +30,7 @@ export function useOnboardingSession() {
 
   useEffect(() => {
     localStorage.setItem(ONBOARDING_SESSION_KEY, JSON.stringify(session));
-    // AppRouter uses presence of this legacy key to distinguish an OAuth
-    // callback from a returning user. Keep it until finalization is atomic.
+    // The old key lets pre-session builds recover this step on rollback.
     localStorage.setItem(LEGACY_ONBOARDING_STEP_KEY, session.currentStepId);
   }, [session]);
 
@@ -63,20 +53,12 @@ export function useOnboardingSession() {
     });
   }, []);
 
-  const setAuthPath = useCallback((authPath: OnboardingAuthPath) => {
-    setSession((current) => ({ ...current, authPath }));
-  }, []);
-
   const setSetupMode = useCallback((setupMode: OnboardingSetupMode) => {
     setSession((current) => ({ ...current, setupMode }));
   }, []);
 
   const setSelfHostedRequested = useCallback((selfHostedRequested: boolean) => {
     setSession((current) => ({ ...current, selfHostedRequested }));
-  }, []);
-
-  const setScreenContextRequested = useCallback((screenContextRequested: boolean) => {
-    setSession((current) => ({ ...current, screenContextRequested }));
   }, []);
 
   const setPermissionGuide = useCallback((permissionGuide: PermissionGuideId | null) => {
@@ -93,10 +75,8 @@ export function useOnboardingSession() {
     setSession,
     goTo,
     goBack,
-    setAuthPath,
     setSetupMode,
     setSelfHostedRequested,
-    setScreenContextRequested,
     setPermissionGuide,
     clearSession,
   };

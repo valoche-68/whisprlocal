@@ -105,19 +105,6 @@ export interface OnboardingRouteContext {
   skipSetupChoice?: boolean;
 }
 
-// Dictation first, then Notes (the meeting recorder and its calendar
-// connections), then the assistant: the assistant demo suggests meeting times
-// from whatever calendar the Notes step connected.
-const ACCOUNT_ROUTE: OnboardingStepId[] = [
-  "auth",
-  "permissions",
-  "languages",
-  "use-cases",
-  "dictation-hotkey",
-  "dictation-demo",
-  "notes",
-];
-
 const SETUP_ROUTES: Record<Exclude<OnboardingSetupMode, null | "cloud">, OnboardingStepId[]> = {
   byok: ["byok-dictation", "byok-assistant"],
   local: ["local-setup"],
@@ -515,6 +502,8 @@ export function reconcileStepWithRoute(
   route: OnboardingStepId[]
 ): OnboardingStepId {
   if (route.includes(stepId)) return stepId;
+  if (stepId === "assistant-hotkey" && route.includes("dictation-hotkey")) return "dictation-hotkey";
+  if (stepId === "assistant-demo" && route.includes("dictation-demo")) return "dictation-demo";
   const target = STEP_ORDER.indexOf(stepId);
   if (target === -1 || route.length === 0) return route[0] ?? "auth";
   return route.reduce((best, candidate) => {
@@ -522,6 +511,40 @@ export function reconcileStepWithRoute(
     const candidateDistance = Math.abs(STEP_ORDER.indexOf(candidate) - target);
     return candidateDistance < bestDistance ? candidate : best;
   }, route[0]);
+}
+
+/** Keep compatible drafts while bringing older sessions onto the local route. */
+export function prepareLocalOnboardingSession(session: OnboardingSession): OnboardingSession {
+  const selfHosted = session.setupMode === "byok" && session.selfHostedRequested;
+  const setupMode = session.setupMode === "local" ? "local" : selfHosted ? "byok" : null;
+  const route = getOnboardingRoute({ authPath: "guest", setupMode, agentAllowed: true });
+  const { currentStepId } = session;
+  const oldLocalStep = currentStepId === "local-dictation" || currentStepId === "local-assistant";
+  const oldProviderStep =
+    currentStepId === "byok-dictation" ||
+    currentStepId === "byok-assistant" ||
+    currentStepId === "local-setup";
+  const resumeAt =
+    setupMode === "local" && oldLocalStep
+      ? "local-setup"
+      : !setupMode && (oldProviderStep || oldLocalStep)
+        ? "setup-choice"
+        : reconcileStepWithRoute(currentStepId, route);
+  return {
+    ...session,
+    currentStepId: resumeAt,
+    history: session.history.filter((step) => route.includes(step)),
+    authPath: "guest",
+    setupMode,
+    selfHostedRequested: selfHosted,
+    screenContextRequested: false,
+    permissionGuide: session.permissionGuide === "screen-context" ? null : session.permissionGuide,
+    resume: {
+      ...session.resume,
+      auth: createOnboardingResumeState().auth,
+      byok: selfHosted ? session.resume.byok : {},
+    },
+  };
 }
 
 export function getNextOnboardingStep(

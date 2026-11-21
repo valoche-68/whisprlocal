@@ -92,12 +92,23 @@ async function createAIModel(
         ...(reasoning ? { fetch: withReasoning(reasoning) } : {}),
       }).chat(model);
     }
-    case "local":
+    case "local": {
+      // The SDK defaults to a public service when no endpoint was given.
+      const endpoint = typeof baseURL === "string" ? URL.parse(baseURL) : null;
+      if (
+        !endpoint ||
+        !/^https?:$/.test(endpoint.protocol) ||
+        (opts?.mode !== "self-hosted" &&
+          !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname))
+      ) {
+        throw new Error("Configure an endpoint for the selected local or self-hosted model");
+      }
       return createOpenAI({
         apiKey: apiKey || "no-key",
         baseURL,
         ...(opts?.fetch ? { fetch: opts.fetch } : {}),
       }).chat(model);
+    }
     default:
       throw new Error(`Unsupported AI SDK provider for renderer: ${provider}`);
   }

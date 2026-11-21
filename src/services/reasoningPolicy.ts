@@ -1,4 +1,5 @@
 import i18n from "../i18n";
+import { modelRegistry } from "../models/ModelRegistry";
 import {
   isAgentAllowed,
   isLlmSelectionAllowed,
@@ -13,10 +14,10 @@ export function assertReasoningAllowedByPolicy(
   mode: InferenceMode,
   model?: string
 ): void {
-  if (
-    (mode !== "local" && mode !== "self-hosted") ||
-    (provider !== "local" && provider !== "lan")
-  ) {
+  const local = mode === "local" && (provider === "local" || !!modelRegistry.getProvider(provider));
+  // The SDK uses its local OpenAI-compatible adapter for explicit self-hosted targets.
+  const selfHosted = mode === "self-hosted" && (provider === "lan" || provider === "local");
+  if (!local && !selfHosted) {
     throw Object.assign(new Error(i18n.t("common.policyAiProcessingRestricted")), {
       code: "LOCAL_ONLY",
     });

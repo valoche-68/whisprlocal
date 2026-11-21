@@ -150,17 +150,20 @@ export function SelfHostedProviderStep({
       store.setRemoteTranscriptionUrl(url.href);
       store.setRemoteTranscriptionModel(model.trim());
       store.setRemoteTranscriptionType("openai-compatible");
-      store.setMeetingRemoteTranscriptionUrl(url.href);
-      store.setMeetingRemoteTranscriptionType("openai-compatible");
       store.setUploadRemoteTranscriptionUrl(url.href);
       store.setUploadRemoteTranscriptionModel(model.trim());
       store.setCustomTranscriptionApiKey(key.trim());
-      store.setCloudTranscriptionForAllScopes({
-        useLocalWhisper: false,
-        cloudTranscriptionMode: "byok",
-        cloudTranscriptionProvider: "custom",
-        cloudTranscriptionModel: model.trim(),
-      });
+      store.setTranscriptionMode("self-hosted");
+      store.setUseLocalWhisper(false);
+      store.setUploadTranscriptionMode("self-hosted");
+      store.setUploadUseLocalWhisper(false);
+      // The compatibility fields remain used by the local self-hosted transport.
+      store.setCloudTranscriptionMode("byok");
+      store.setCloudTranscriptionProvider("custom");
+      store.setCloudTranscriptionModel(model.trim());
+      store.setUploadCloudTranscriptionMode("byok");
+      store.setUploadCloudTranscriptionProvider("custom");
+      store.setUploadCloudTranscriptionModel(model.trim());
     }
     onProceed();
   };

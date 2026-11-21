@@ -16,6 +16,33 @@ const CliBridge = require("../../src/helpers/cliBridge.js");
 const { call } = require("./harness/cliBridge.js");
 const debugLogger = require("../../src/helpers/debugLogger");
 
+test("server and client can share a private descriptor for an isolated profile", async (t) => {
+  const fs = require("node:fs/promises");
+  const os = require("node:os");
+  const path = require("node:path");
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "whisprlocal-bridge-test-"));
+  const previous = process.env.WHISPRLOCAL_BRIDGE;
+  const file = path.join(directory, "bridge.json");
+  process.env.WHISPRLOCAL_BRIDGE = file;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.WHISPRLOCAL_BRIDGE;
+    else process.env.WHISPRLOCAL_BRIDGE = previous;
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+  const bridge = new CliBridge({});
+  const { readBridge } = require("../../src/local/bridgeClient.cjs");
+  await bridge.start();
+  try {
+    const descriptor = readBridge();
+    assert.equal(bridge.bridgeFilePath, file);
+    assert.equal(descriptor.port, bridge.port);
+    assert.equal(descriptor.token, bridge.token);
+  } finally {
+    await bridge.stop();
+  }
+  await assert.rejects(fs.access(file), { code: "ENOENT" });
+});
+
 function createBridge(t) {
   const db = createDb(t);
   if (!db) return null;

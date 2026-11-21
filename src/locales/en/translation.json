@@ -1695,6 +1695,7 @@
     "managedByOrg": "Some settings are managed by your organization.",
     "managedAccount": "Managed account",
     "groups": {
+      "app": "App",
       "account": "Account",
       "workspace": "Workspace",
       "aiModels": "AI Models",

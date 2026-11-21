@@ -1653,6 +1653,7 @@
     "managedByOrg": "Algunos ajustes están gestionados por tu organización.",
     "managedAccount": "Cuenta gestionada",
     "groups": {
+      "app": "Aplicación",
       "account": "Cuenta",
       "workspace": "Espacio de trabajo",
       "aiModels": "Modelos de IA",

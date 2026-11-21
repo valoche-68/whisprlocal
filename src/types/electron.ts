@@ -3427,24 +3427,12 @@ declare global {
         filePath: string;
         requestId?: string;
         purpose?: "dictation" | "upload";
-        apiKey: string;
-        baseUrl: string;
-        model: string;
         diarize?: boolean;
         timestamps?: boolean;
-        provider?: string;
         language?: string;
-        environment?: string;
-        tenant?: string;
-        transcriptionMode?: string;
+        transcriptionMode: "self-hosted";
         remoteTranscriptionUrl?: string;
         remoteTranscriptionModel?: string;
-        managed?: {
-          kind: "managed";
-          provider: "azure" | "openai-compatible";
-          deployment: string;
-          context: ManagedEnterpriseRequestContext;
-        };
       }) => Promise<{
         success: boolean;
         text?: string;

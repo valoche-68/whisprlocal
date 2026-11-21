@@ -4,24 +4,7 @@ const { createRendererServer, installBrowserGlobals } = require("../lib/renderer
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 async function setup(t) {
-  const listeners = { chunk: new Set(), end: new Set(), error: new Set() };
-  const started = [];
-  const cancelled = [];
-  const subscribe = (kind) => (listener) => {
-    listeners[kind].add(listener);
-    return () => listeners[kind].delete(listener);
-  };
-  installBrowserGlobals(t, {
-    window: {
-      electronAPI: {
-        startAgentStream: (id) => started.push(id),
-        cancelAgentStream: (id) => cancelled.push(id),
-        onAgentStreamChunk: subscribe("chunk"),
-        onAgentStreamEnd: subscribe("end"),
-        onAgentStreamError: subscribe("error"),
-      },
-    },
-  });
+  installBrowserGlobals(t);
   const vite = await createRendererServer(t);
   const service = (await vite.ssrLoadModule("/services/ReasoningService.ts")).default;
   (await vite.ssrLoadModule("/stores/policyStore.ts")).usePolicyStore.setState({
@@ -29,53 +12,32 @@ async function setup(t) {
     policy: null,
   });
   t.after(() => service.destroy());
-  const emit = (kind, id, chunk) =>
-    listeners[kind].forEach((listener) => listener({ requestId: id, chunk }));
-  const start = (signal) =>
-    service.processTextStreamingCloud(
-      [{ role: "user", content: "hi" }],
-      { systemPrompt: "Answer" },
-      signal
-    );
-  return { service, listeners, started, cancelled, emit, start };
+  return service;
 }
 
-test("cloud streams run concurrently and abort only their owner's request", async (t) => {
-  const fixture = await setup(t);
-  const ownerA = new AbortController();
-  const ownerB = new AbortController();
-  const streamA = fixture.start(ownerA.signal);
-  const streamB = fixture.start(ownerB.signal);
-  const nextA = streamA.next();
-  const nextB = streamB.next();
-  await flush();
-  assert.equal(fixture.started.length, 2);
-  assert.deepEqual(fixture.cancelled, []);
-  ownerA.abort();
-  await flush();
-  assert.deepEqual(fixture.cancelled, [fixture.started[0]]);
-  assert.deepEqual((await nextA).value, { type: "done", finishReason: "abort" });
-  assert.equal((await streamA.next()).done, true);
-  fixture.emit("chunk", fixture.started[1], { type: "content", text: "still answering" });
-  assert.equal((await nextB).value.text, "still answering");
-  await streamB.return();
-  assert.equal(fixture.listeners.chunk.size, 0);
-});
-
-test("a pre-aborted cloud stream does not send IPC even before first next", async (t) => {
-  const fixture = await setup(t);
+test("an already stopped assistant request never starts the local server", async (t) => {
+  const service = await setup(t);
+  const startServer = t.mock.fn();
+  const fetch = t.mock.method(globalThis, "fetch");
+  window.electronAPI.llamaServerStart = startServer;
   const owner = new AbortController();
-  const stream = fixture.start(owner.signal);
+  const stream = service.processTextStreamingAI(
+    [{ role: "user", content: "hi" }],
+    "qwen3-4b",
+    "local",
+    { systemPrompt: "Answer" },
+    undefined,
+    owner.signal
+  );
   owner.abort();
-  const first = stream.next();
-  await flush();
-  assert.deepEqual(fixture.started, []);
-  assert.equal((await first).done, true);
+  assert.equal((await stream.next()).done, true);
+  assert.equal(startServer.mock.callCount(), 0);
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
 for (const transport of ["raw", "ai"]) {
   test(`${transport} streaming observes caller abort during local server setup`, async (t) => {
-    const { service } = await setup(t);
+    const service = await setup(t);
     let release;
     globalThis.window.electronAPI.llamaServerStart = () =>
       new Promise((resolve) => {
@@ -107,21 +69,11 @@ for (const transport of ["raw", "ai"]) {
   });
 }
 
-test("cancelAllRequests stops both cloud operations and detaches their listeners", async (t) => {
-  const fixture = await setup(t);
-  const pending = [fixture.start().next(), fixture.start().next()];
-  await flush();
-  fixture.service.cancelAllRequests();
-  await Promise.all(pending);
-  assert.deepEqual(new Set(fixture.cancelled), new Set(fixture.started));
-  assert.equal(fixture.listeners.chunk.size, 0);
-});
-
 for (const transport of ["raw", "ai"]) {
   test(`${transport} streams keep independent transports and release a consumer that returns early`, async (t) => {
-    const { service } = await setup(t);
+    const service = await setup(t);
     const requests = [];
-    t.mock.method(globalThis, "fetch", async (_url, init) => {
+    t.mock.method(globalThis, "fetch", async (url, init) => {
       let controller;
       const body = new ReadableStream({
         start(value) {
@@ -137,6 +89,8 @@ for (const transport of ["raw", "ai"]) {
         },
         { once: true }
       );
+      assert.equal(String(url), "http://127.0.0.1:11434/v1/chat/completions");
+      assert.equal(new Headers(init.headers).get("authorization"), "Bearer self-hosted-token");
       requests.push({ signal: init.signal, body, controller });
       return new Response(body, { headers: { "content-type": "text/event-stream" } });
     });
@@ -145,7 +99,11 @@ for (const transport of ["raw", "ai"]) {
         [{ role: "user", content: "hello" }],
         "qwen3-4b",
         "lan",
-        { systemPrompt: "Answer", lanUrl: "http://127.0.0.1:11434/v1" },
+        {
+          systemPrompt: "Answer",
+          lanUrl: "http://127.0.0.1:11434/v1",
+          customApiKey: "self-hosted-token",
+        },
       ];
       return transport === "raw"
         ? service.processTextStreaming(...args)
@@ -177,6 +135,7 @@ for (const transport of ["raw", "ai"]) {
     else assert.equal(requests[0].body.locked, false);
     assert.equal(requests[1].signal.aborted, false);
     service.cancelAllRequests();
+    assert.equal(requests[1].signal.aborted, true);
     await second.return();
   });
 }

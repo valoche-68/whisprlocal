@@ -3,30 +3,21 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   BanknoteCheck,
-  ChevronRight,
   GalleryVerticalEnd,
-  KeyRound,
   Laptop,
   Server,
   WifiOff,
   Zap,
 } from "../icons";
 import { useTranslation } from "react-i18next";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 import { usePolicySnapshot } from "../../hooks/usePolicy";
-import {
-  getParakeetModels,
-  getWhisperModels,
-  getTranscriptionProviders,
-  modelRegistry,
-} from "../../models/ModelRegistry";
+import { getParakeetModels, getWhisperModels } from "../../models/ModelRegistry";
 import type { OnboardingSetupMode } from "./flow";
 import { getOnboardingSetupAvailability, hasAvailableOnboardingSetup } from "./setupEligibility";
 import { LocalModelPolicyNotice } from "../ui/LocalModelPolicyNotice";
 import { LOCAL_ASR_ORGANIZATIONS } from "../../helpers/localASROrganization";
 import { getProviderIcon, isMonochromeProvider } from "@/utils/providerIcons";
 import { cn } from "../lib/utils";
-import apiSetupHero from "../../assets/onboarding-api-setup-hero.webp";
 
 type SetupMode = Exclude<OnboardingSetupMode, null | "cloud">;
 
@@ -43,36 +34,10 @@ interface SetupChoiceStepProps {
   onSelect: (mode: SetupMode) => void;
 }
 
-interface MoreSetupOption {
-  id: "self-hosted";
-  icon: typeof KeyRound;
-  title: string;
-  description: string;
-}
-
-// Figma "Frame 49"–"Frame 52": row, gap 8, a 14px mark beside 14/140% body.
-// The mark is tertiary grey on the self-serve cards and the brand accent on the
-// cloud card, which is the only visual weighting between them.
-//
-// strokeWidth stays at the icon set's default 2 rather than the 1.16667 the
-// export shows. Both describe the same line: Figma exports these at viewBox
-// 0 0 14 14, so its 1.16667 is already in 14px space, while the icons draw in a
-// 24 viewBox scaled down to 14 — 2 x (14/24) = 1.1667 device px, exactly the
-// spec. Passing 1.167 here applies the scale twice and renders a 0.68px hairline.
-function Feature({
-  icon: Icon,
-  accent = false,
-  children,
-}: {
-  icon: typeof Zap;
-  accent?: boolean;
-  children: string;
-}) {
+function Feature({ icon: Icon, children }: { icon: typeof Zap; children: string }) {
   return (
     <li className="flex items-center gap-1.5 text-xs leading-[1.4] text-[var(--onboarding-text-primary)]">
-      <Icon
-        className={`size-3 shrink-0 ${accent ? "text-[var(--onboarding-accent)]" : "text-[var(--onboarding-text-tertiary)]"}`}
-      />
+      <Icon className="size-3 shrink-0 text-[var(--onboarding-text-tertiary)]" />
       {children}
     </li>
   );
@@ -135,29 +100,16 @@ export default function SetupChoiceStep({
       cancelled = true;
     };
   }, []);
-  const [showMore, setShowMore] = useState(false);
 
   const availability = getOnboardingSetupAvailability({
     policy,
     agentAllowed,
-    transcriptionProviders: getTranscriptionProviders(),
-    llmProviders: modelRegistry.getCloudProviders(),
     supportedLocalTranscriptionModels: [
       ...Object.keys(getWhisperModels()),
       ...(parakeetUnsupported ? [] : Object.keys(getParakeetModels())),
     ].map((id) => ({ id })),
   });
   const { local: localAllowed, selfHosted: selfHostedAllowed } = availability;
-  const moreSetupOptions: MoreSetupOption[] = [];
-  if (selfHostedAllowed) {
-    moreSetupOptions.push({
-      id: "self-hosted",
-      icon: Server,
-      title: t("onboarding.rehaul.setupChoice.moreOptions.selfHosted.title"),
-      description: t("onboarding.rehaul.setupChoice.moreOptions.selfHosted.description"),
-    });
-  }
-
   if (!hasAvailableOnboardingSetup(availability)) {
     return (
       <div
@@ -258,94 +210,16 @@ export default function SetupChoiceStep({
         )}
       </div>
 
-      {/* Frame 25: BYOK and self-hosted are not cards in the spec — they live
-          behind this pill, which opens the "Choose your API setup" modal. Hidden
-          entirely when policy disallows both options. */}
       {selfHostedAllowed && (
         <button
           type="button"
-          onClick={() => setShowMore(true)}
-          className="onboarding-pressable rounded-[38px] border border-[var(--onboarding-control-border)] px-4 py-1.5 text-xs font-medium leading-[1.4] text-[var(--onboarding-text-primary)] hover:bg-[var(--onboarding-surface-hover)]"
+          onClick={() => onSelect("byok")}
+          className="onboarding-pressable inline-flex items-center gap-2 rounded-[38px] border border-[var(--onboarding-control-border)] px-4 py-1.5 text-xs font-medium leading-[1.4] text-[var(--onboarding-text-primary)] hover:bg-[var(--onboarding-surface-hover)]"
         >
-          {t("onboarding.rehaul.setupChoice.showMore")}
+          <Server className="size-3.5" aria-hidden="true" />
+          {t("onboarding.rehaul.setupChoice.moreOptions.selfHosted.title")}
         </button>
       )}
-
-      {/* Figma "Frame 2147258999": 460 wide, radius 28, pad 24/20/32/20, col gap
-          32, over a 20% black scrim at backdrop-blur(11). Picking a row goes
-          straight to that setup step. */}
-      <Dialog open={showMore} onOpenChange={(open) => !open && setShowMore(false)}>
-        <DialogContent
-          overlayClassName="bg-[var(--onboarding-scrim)]! backdrop-blur-[11px]"
-          className="w-full max-w-sm gap-6 rounded-3xl border-0 bg-[var(--onboarding-surface)] px-4 pb-6 pt-5 text-start [&>button]:hidden"
-        >
-          {/* Frame 2147258979: 238 tall, radius 20, image fill. Source is 840x477,
-              so it lands at ~2x for the 420x238 slot. */}
-          <div
-            className="flex h-[190px] items-center justify-center rounded-2xl bg-cover bg-center"
-            style={{ backgroundImage: `url(${apiSetupHero})` }}
-          >
-            {/* Frame 35: pad 10 20, gap 7, radius 38, 16/140% medium. */}
-            <span className="inline-flex items-center gap-1.5 rounded-[38px] border border-[var(--onboarding-control-border)] bg-[var(--onboarding-surface)] px-4 py-2 text-sm font-medium leading-[1.4] text-[var(--onboarding-text-primary)]">
-              <KeyRound
-                className="size-5 shrink-0 text-[var(--onboarding-accent)]"
-                strokeWidth={1.667}
-              />
-              {/* Illustrative sample, not copy — deliberately not translated. */}
-              sk*********Jkn
-            </span>
-          </div>
-
-          {/* Frame 2147259001: col gap 20. */}
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col items-center gap-2 text-center">
-              {/* Important modifiers are load-bearing: DialogTitle renders an h2, and both
-                  its own shadcn classes and the global h1–h6 rule set weight 600 and a
-                  tighter tracking that a plain utility loses to. */}
-              <DialogTitle className="text-xl! font-medium! leading-[1.4]! tracking-normal! text-[var(--onboarding-text-primary)]">
-                {t("onboarding.rehaul.setupChoice.moreOptions.title")}
-              </DialogTitle>
-              <DialogDescription className="w-full max-w-xs text-sm leading-[1.4] text-[var(--onboarding-text-secondary)]">
-                {t("onboarding.rehaul.setupChoice.moreOptions.description")}
-              </DialogDescription>
-            </div>
-
-            {/* Frame 16: pad 20 16, surface-secondary, radius 20. Rows follow the
-                shared rhythm — nothing above the first, divider between. */}
-            <div className="rounded-2xl bg-[var(--onboarding-surface-secondary)] px-3.5 py-4">
-              {moreSetupOptions.map((row, index) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => {
-                    setShowMore(false);
-                    onSelect("byok");
-                  }}
-                  className={`onboarding-pressable flex w-full items-center gap-[14px] text-start ${
-                    index === 0 ? "pb-4" : "border-t border-[var(--onboarding-control-border)] pt-4"
-                  }`}
-                >
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full border-[1.47px] border-[var(--onboarding-control-border)] text-[var(--onboarding-accent)]">
-                    <row.icon className="size-[18px]" strokeWidth={1.667} />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    <span className="text-sm font-medium leading-[1.4] text-[var(--onboarding-text-primary)]">
-                      {row.title}
-                    </span>
-                    <span className="text-sm leading-[1.4] text-[var(--onboarding-text-secondary)]">
-                      {row.description}
-                    </span>
-                  </span>
-                  {/* Frame 25: 32px surface-tertiary disc with a tertiary chevron. */}
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--onboarding-surface-tertiary)] text-[var(--onboarding-text-tertiary)]">
-                    <ChevronRight className="size-4 rtl:rotate-180" strokeWidth={1.667} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

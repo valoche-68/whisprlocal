@@ -8,7 +8,7 @@ const { spawn } = require("node:child_process");
 const { PassThrough } = require("node:stream");
 const { readBridge, invoke } = require("../../src/local/bridgeClient.cjs");
 const { dispatch, serve } = require("../../src/local/mcp.cjs");
-const { isAllowed, setConfigured } = require("../../src/local/networkPolicy.cjs");
+const { assertAllowed, isAllowed, setConfigured } = require("../../src/local/networkPolicy.cjs");
 test("network policy refuses official and unconfigured services, preserves downloads and explicit servers", () => {
   setConfigured([
     "https://speech.example.org/v1",
@@ -24,6 +24,9 @@ test("network policy refuses official and unconfigured services, preserves downl
     "https://api.openwhispr.com./v1",
     "wss://api.openwhispr.com./v1",
     "https://openwhisper.com./v1",
+    "https://raw.githubusercontent.com/OpenWhispr/model-registry/published/v2/manifest.json",
+    "https://raw.githubusercontent.com./%4fpenWhispr/model-registry/published/v2/manifest.json",
+    "https://api.github.com/repos/openwhispr/model-registry/releases/latest",
     "https://google.com",
     "https://speech.example.org.evil.com",
   ])
@@ -37,6 +40,11 @@ test("network policy refuses official and unconfigured services, preserves downl
     "https://speech.example.org/v1/transcriptions",
   ])
     assert.equal(isAllowed(u), true, u);
+  assertAllowed("https://speech.example.org/v1/transcriptions", { configuredOnly: true });
+  assert.throws(
+    () => assertAllowed("https://huggingface.co/a", { configuredOnly: true }),
+    { code: "NETWORK_POLICY" }
+  );
   setConfigured([]);
   assert.equal(isAllowed("https://speech.example.org/v1"), false);
 });

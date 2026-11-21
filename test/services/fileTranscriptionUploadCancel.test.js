@@ -2,14 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createRendererServer, installBrowserGlobals } = require("../lib/rendererTestHarness");
 
-// Cancelling a long OpenRouter upload must reach the main process, or every
-// remaining piece is still sent and billed. Both the single-file view and the
-// batch queue pass their requestId through transcribeFileWithSpeakers.
-test("a bring-your-own-key upload hands its cancel id to the main process", async (t) => {
+test("a self-hosted file upload hands its cancel id to the main process", async (t) => {
   const { window } = installBrowserGlobals(t);
   const vite = await createRendererServer(t, {
     cachePrefix: "openwhispr-file-upload-cancel-test-",
-    mockModules: { "/lib/auth": "export const withSessionRefresh = (fn) => fn();" },
   });
   const { transcribeFileWithSpeakers } = await vite.ssrLoadModule(
     "/services/fileTranscription.ts"
@@ -29,12 +25,10 @@ test("a bring-your-own-key upload hands its cancel id to the main process", asyn
       parakeetModel: "parakeet-tdt-0.6b-v3",
       cohereModel: "",
       isOpenWhisprCloud: false,
-      getApiKey: () => "ork-openrouter",
-      cloudTranscriptionProvider: "openrouter",
-      cloudTranscriptionBaseUrl: "",
-      cloudTranscriptionModel: "google/chirp-3",
+      remoteTranscriptionUrl: "http://127.0.0.1:9000/v1",
+      remoteTranscriptionModel: "whisper-base",
       language: "",
-      transcriptionMode: "providers",
+      transcriptionMode: "self-hosted",
     },
     { enabled: false, localModelsReady: false, numSpeakers: null },
     null,
@@ -42,4 +36,6 @@ test("a bring-your-own-key upload hands its cancel id to the main process", asyn
   );
 
   assert.equal(received.requestId, "upload-7");
+  assert.equal(received.transcriptionMode, "self-hosted");
+  assert.equal(received.timestamps, true);
 });

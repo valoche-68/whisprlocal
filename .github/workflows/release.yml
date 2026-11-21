@@ -66,8 +66,7 @@ jobs:
             dist/WhisprLocal-*-linux-x64.deb
             dist/WhisprLocal-*-linux-x64.AppImage
             dist/WhisprLocal-*-linux-x64.tar.gz
-            dist/*.yml
-            dist/*.blockmap
+            dist/latest-linux.yml
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
@@ -91,4 +90,6 @@ jobs:
           version=${file#WhisprLocal-}; version=${version%-linux-x64.deb}
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           printf 'Independent Linux x86_64 edition. Review the artifacts and checks before publishing this draft. See the repository for English and French documentation.\n' > notes.md
-          gh release create "v$version" release/* --target "$COMMIT" --draft --title "WhisprLocal $version" --notes-file notes.md
+          gh release create "v$version" "release/WhisprLocal-$version-linux-x64."{deb,AppImage,tar.gz} \
+            release/latest-linux.yml release/SHA256SUMS --target "$COMMIT" --draft \
+            --title "WhisprLocal $version" --notes-file notes.md

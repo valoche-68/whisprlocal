@@ -6,21 +6,17 @@ import { PAGE_CONTENT_WIDTH_CLASS } from "./ui/pageWidth";
 import { cn } from "./lib/utils";
 import { BIDI_VALUE_TOKEN, BidiInterpolatedText } from "./ui/BidiInterpolatedText";
 import { Download, RefreshCw, Loader2, AlertTriangle, Zap } from "./icons";
-import UpgradePrompt from "./UpgradePrompt";
 import PostMigrationOnboarding from "./PostMigrationOnboarding";
 import { RequiredModelsBanner } from "./RequiredModelsBanner";
 import { ConfirmDialog, AlertDialog } from "./ui/dialog";
 import { useDialogs } from "../hooks/useDialogs";
-import { useSignOut } from "../hooks/useSignOut";
 import { useHotkey } from "../hooks/useHotkey";
 import { useToast } from "./ui/useToast";
 import { useUpdater } from "../hooks/useUpdater";
+import { updatePolicyMessageKey } from "../utils/updatePolicyMessage";
 import { useSettings } from "../hooks/useSettings";
 import { recordingRecorderName } from "../utils/noteRecorder";
 import { useAuth } from "../hooks/useAuth";
-import { useJoinableWorkspaces } from "../hooks/useJoinableWorkspaces";
-import { useUsage } from "../hooks/useUsage";
-import { decideUpsell } from "../lib/upsell";
 import { useCollapsibleSidebar } from "../hooks/useCollapsibleSidebar";
 import {
   useTranscriptions,
@@ -35,10 +31,18 @@ import {
   selectPolicyEffectiveSettings,
   useSettingsStore,
 } from "../stores/settingsStore";
+import {
+  startNewChat,
+  subscribeChatAccountScope,
+  subscribeChatPolicy,
+} from "../stores/chatTurnStore";
+import { useChatNeedsAttention } from "./chat/useChatNeedsAttention";
 import { usePolicyStore } from "../stores/policyStore";
-import { useWorkspaceStore } from "../stores/workspaceStore";
-import type { EnterpriseAudioTestLink } from "../types/enterpriseAudio";
-import { usePolicySnapshot } from "../hooks/usePolicy";
+import { startWorkspaceScopeBridge } from "../stores/workspaceScopeBridge";
+import { useEnsureDefaultWorkspace } from "../hooks/useWorkspace";
+import { usePolicySnapshot, useMeetingAutoTranscriptionCheck } from "../hooks/usePolicy";
+import { handleMeetingRecordingRequest } from "../helpers/meetingRecordingRequest";
+import { useMeetingNoteSession } from "../hooks/useMeetingNoteSession";
 import {
   isAgentAllowed,
   isAudioFeatureAllowed,
@@ -46,6 +50,7 @@ import {
   isPolicyActionAllowed,
   isTranscriptionContextAllowed,
   isUpdateRequiredByOrg,
+  transcriptionChoiceRefusal,
 } from "../stores/policyRules";
 import { getManagedTranscriptionResolution } from "../services/managedTranscription";
 import {
@@ -69,11 +74,11 @@ import { getCachedPlatform } from "../utils/platform";
 import { isAccessibilitySkipped } from "../utils/permissions";
 import { useGpuBannerAvailability } from "../hooks/useGpuBannerAvailability";
 import { startRecordingForNote, useCreateNote } from "../hooks/useCreateNote";
-import { useSignInCloudNudge } from "../hooks/useSignInCloudNudge";
 import {
   setActiveNoteId,
   setActiveFolderId,
   navigateToContainer,
+  ensureNoteLoaded,
   useActiveNoteId,
   initializeNotes,
   subscribeMeetingNotificationFolders,
@@ -89,26 +94,20 @@ import { getAgentName } from "../utils/agentName";
 import HistoryView from "./HistoryView";
 import BackgroundActionToastListener from "./notes/BackgroundActionToastListener";
 import AssistantNoteUndoListener from "./notes/AssistantNoteUndoListener";
-import { providerErrorToastProps } from "../utils/describeProviderError";
-import SpaceSyncToastListener from "./notes/SpaceSyncToastListener";
-import SharedDictionaryArrivalToastListener from "./SharedDictionaryArrivalToastListener";
+import { providerErrorActions, providerErrorToastProps } from "../utils/describeProviderError";
 import { syncService } from "../services/SyncService.js";
 import logger from "../utils/logger";
-import AcceptInvitationModal from "./AcceptInvitationModal";
-import JoinYourTeamModal from "./JoinYourTeamModal";
-import { useInvitationNotesEntry } from "../hooks/useInvitationNotesEntry";
-import {
-  consumePendingInvitationToken,
-  clearPendingInvitationToken,
-} from "../utils/pendingInvitationToken";
+import { useModalGate } from "../stores/modalGateStore";
 import type { SkillChatRequest, SkillChatStart, SkillOpenRequest } from "../types/skills";
+import type { SourceNote } from "./chat/useSourceNote";
 
 const platform = getCachedPlatform();
 
 const SIDEBAR_WIDTH_PX = 192;
+// open-settings-section names an Integrations section as "integrations.<section>".
+const INTEGRATIONS_TARGET_PREFIX = "integrations.";
 
 const SettingsModal = React.lazy(() => import("./SettingsModal"));
-const ReferralModal = React.lazy(() => import("./ReferralModal"));
 const PersonalNotesView = React.lazy(() => import("./notes/PersonalNotesView"));
 const InsightsView = React.lazy(() => import("./InsightsView"));
 const DictionaryView = React.lazy(() => import("./DictionaryView"));
@@ -128,10 +127,9 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   const history = useTranscriptions();
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(!!initialSettingsSection);
-  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [showPostMigration, setShowPostMigration] = useState(false);
-  const [limitData, setLimitData] = useState<{ wordsUsed: number; limit: number } | null>(null);
-  const hasShownUpgradePrompt = useRef(false);
+  const [postMigrationChecked, setPostMigrationChecked] = useState(platform !== "darwin");
+  useModalGate("postMigrationPending", !postMigrationChecked);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(
     initialSettingsSection
   );
@@ -141,14 +139,11 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   const [aiCTADismissed, setAiCTADismissed] = useState(
     () => localStorage.getItem("aiCTADismissed") === "true"
   );
-  const [showReferrals, setShowReferrals] = useState(false);
-  const [invitationToken, setInvitationToken] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const showDiscarded = useShowDiscarded();
   const [activeView, setActiveView] = useState<ControlPanelView>("home");
-  const [invitationNotesEntry, setInvitationNotesEntry] = useInvitationNotesEntry(
-    activeView === "personal-notes"
-  );
+  // The chat keeps its turns running behind other views; one that waits on the user marks Chat.
+  const chatNeedsAttention = useChatNeedsAttention();
   const [integrationsSection, setIntegrationsSection] = useState<IntegrationsSection>(
     DEFAULT_INTEGRATIONS_SECTION
   );
@@ -172,6 +167,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     noteId: number;
     folderId: number | null;
     event: any;
+    trigger?: string;
+    noteSessionId?: string;
   } | null>(null);
   // Try now and Create with assistant open a chat; Open skill on a chat's card opens the skill.
   const [skillChatRequest, setSkillChatRequest] = useState<SkillChatRequest | null>(null);
@@ -184,20 +181,10 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   const { toast } = useToast();
   const { useCleanupModel } = useSettings();
   const { isSignedIn, isLoaded: authLoaded, user } = useAuth();
-  // Suppressed while a deep-linked invitation is open so the two never stack.
-  const {
-    joinable,
-    dismiss: dismissJoinable,
-    markRequested,
-  } = useJoinableWorkspaces(user?.id ?? null, isSignedIn && !invitationToken);
-  const usage = useUsage();
-  const upsell = decideUpsell({
-    authLoaded,
+  const canAutoStartMeeting = useMeetingAutoTranscriptionCheck({
+    isLoaded: authLoaded,
     isSignedIn,
-    hasPaidAccess: usage?.hasPaidAccess ?? null,
-    isPastDue: usage?.isPastDue ?? false,
   });
-
   const {
     status: updateStatus,
     downloadProgress,
@@ -207,52 +194,19 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     installUpdate,
   } = useUpdater();
 
-  const openTranscriptionSettings = useCallback(() => {
-    setSettingsSection("transcription");
-    setShowSettings(true);
-  }, []);
-  useSignInCloudNudge(isSignedIn, openTranscriptionSettings);
-  const workspacesLoaded = useWorkspaceStore((state) => state.loaded);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const [audioTestLink, setAudioTestLink] = useState<EnterpriseAudioTestLink | null>(null);
-  useEffect(() => {
-    const claim = (): void => {
-      void window.electronAPI?.claimEnterpriseAudioTest?.().then((link) => {
-        if (link) setAudioTestLink(link);
-      });
-    };
-    claim();
-    return window.electronAPI?.onEnterpriseAudioTestRequested?.(claim);
-  }, []);
-  // Settings consumes a link for the active workspace; any other one is dropped here.
-  useEffect(() => {
-    if (!audioTestLink || !authLoaded || (isSignedIn && !workspacesLoaded)) return;
-    setAudioTestLink(null);
-    if (isSignedIn && audioTestLink.workspaceId === activeWorkspaceId) {
-      openTranscriptionSettings();
-      return;
-    }
-    void window.electronAPI?.getPendingEnterpriseAudioTest?.(true);
-    toast({ description: t("enterprise.audio.testLinkOtherWorkspace") });
-  }, [
-    audioTestLink,
-    authLoaded,
-    isSignedIn,
-    workspacesLoaded,
-    activeWorkspaceId,
-    openTranscriptionSettings,
-    toast,
-    t,
-  ]);
-
   const agentAllowedByPolicy = usePolicyStore(isAgentAllowed);
-  const { createNote } = useCreateNote();
+  useEffect(subscribeChatPolicy, []);
+  useEffect(subscribeChatAccountScope, []);
+  // Main resolves where new private notes go from the workspace this window has active.
+  useEffect(startWorkspaceScopeBridge, []);
+  useEnsureDefaultWorkspace();
+  const { createNote } = useCreateNote(canAutoStartMeeting);
   // The note is created before the view switches so Notes mounts with it already open.
   const handleNewNote = useCallback(async () => {
     await createNote();
     setActiveView("personal-notes");
   }, [createNote]);
-  const showDictionary = useCallback(() => setActiveView("dictionary"), []);
+
   const policyActionsAllowed = usePolicyStore((state) => isPolicyActionAllowed(state));
   useEffect(() => {
     if (!isControlPanelViewAllowed(activeView, agentAllowedByPolicy, policyActionsAllowed)) {
@@ -294,7 +248,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     hideConfirmDialog,
     hideAlertDialog,
   } = useDialogs();
-  const { requestSignOut } = useSignOut({ showConfirmDialog, showAlertDialog });
 
   const loadTranscriptions = useCallback(
     async (includeDiscarded?: boolean) => {
@@ -327,9 +280,16 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
 
   useEffect(() => {
     if (platform !== "darwin") return;
-    window.electronAPI?.getPostMigrationState?.().then((state) => {
-      if (state?.justMigrated) setShowPostMigration(true);
-    });
+    const check = window.electronAPI?.getPostMigrationState?.();
+    if (!check) {
+      setPostMigrationChecked(true);
+      return;
+    }
+    check
+      .then((state) => {
+        if (state?.justMigrated) setShowPostMigration(true);
+      })
+      .finally(() => setPostMigrationChecked(true));
   }, []);
 
   const dismissPostMigrationPermanently = useCallback(async () => {
@@ -367,66 +327,9 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     }
   }, [updateStatus.updateDownloaded, isDownloading, toast, t]);
 
-  useEffect(() => {
-    const dispose = window.electronAPI?.onLimitReached?.(
-      (data: { wordsUsed: number; limit: number }) => {
-        if (!hasShownUpgradePrompt.current) {
-          hasShownUpgradePrompt.current = true;
-          setLimitData(data);
-          setShowUpgradePrompt(true);
-        } else {
-          toast({
-            title: t("controlPanel.limit.weeklyTitle"),
-            description: t("controlPanel.limit.weeklyDescription"),
-            duration: 5000,
-          });
-        }
-      }
-    );
-
-    return () => {
-      dispose?.();
-    };
-  }, [toast, t]);
-
-  useEffect(() => {
-    if (!usage?.isPastDue) return;
-    if (sessionStorage.getItem("pastDueNotified")) return;
-    sessionStorage.setItem("pastDueNotified", "true");
-    toast({
-      title: t("controlPanel.billing.pastDueTitle"),
-      description: t("controlPanel.billing.pastDueDescription"),
-      variant: "destructive",
-      duration: 8000,
-    });
-  }, [usage?.isPastDue, toast, t]);
-
-  useEffect(() => {
-    const unsubscribe = window.electronAPI?.onWorkspaceInvitationToken?.((token) => {
-      setInvitationToken(token);
-      // Consume the main-process stash so a handled push isn't re-pulled on a
-      // later remount.
-      void window.electronAPI?.getPendingInvitationToken?.();
-    });
-    window.electronAPI?.getPendingInvitationToken?.().then((token) => {
-      if (token) setInvitationToken(token);
-    });
-    return () => unsubscribe?.();
-  }, []);
-
-  useEffect(() => {
-    // Also when signed out (the modal's "Sign in to accept" handles auth);
-    // isSignedIn stays in the deps so a stored token resurfaces after sign-in.
-    if (!authLoaded) return;
-    const pending = consumePendingInvitationToken();
-    if (pending) {
-      setInvitationToken(pending);
-      clearPendingInvitationToken();
-    }
-  }, [authLoaded, isSignedIn]);
-
   // A ref, not a per-run flag: StrictMode's remount must not cancel the first drain.
   const meetingNavigationMounted = useRef(false);
+  const meetingNoteSession = useMeetingNoteSession(activeView, activeNoteId);
   const recordingIdentityRef = useRef({ user, t });
   recordingIdentityRef.current = { user, t };
   useEffect(() => {
@@ -447,22 +350,46 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
           () => import("./notes/PersonalNotesView"),
           (note) => {
             const { user: recordingUser, t: translate } = recordingIdentityRef.current;
-            void startRecordingForNote(note, recordingRecorderName(note, recordingUser, translate))
-              .then((accepted) => {
-                if (!accepted) void window.electronAPI?.restoreFromMeetingMode?.();
-              })
-              .catch((error) =>
-                logger.warn(
-                  "Failed to start notification recording",
-                  { error: String(error) },
-                  "meeting"
-                )
-              );
+            if (data.noteSessionId)
+              meetingNoteSession.current = { id: data.noteSessionId, noteId: note.id };
+            void handleMeetingRecordingRequest({
+              args: {
+                noteId: note.id,
+                noteTitle: note.title,
+                folderId: note.folder_id,
+                autoEndEligible: true,
+              },
+              canAutoStart: canAutoStartMeeting,
+              startRecording: (args) =>
+                startRecordingForNote(
+                  note,
+                  recordingRecorderName(note, recordingUser, translate),
+                  args.canAutoStart
+                ),
+              restoreFromMeetingMode: () => window.electronAPI?.restoreFromMeetingMode?.(),
+              onSuppressed: () =>
+                data.noteSessionId
+                  ? window.electronAPI?.meetingNoteOpenedWithoutRecording?.(data.noteSessionId)
+                  : undefined,
+              onHandled: () => {},
+            }).catch((error) =>
+              logger.warn(
+                "Failed to start notification recording",
+                { error: String(error) },
+                "meeting"
+              )
+            );
           }
         );
         return;
       }
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        // Main already gave this navigation away, so nothing else can end its session.
+        if (data.noteSessionId) void window.electronAPI?.meetingNoteClosed?.(data.noteSessionId);
+        return;
+      }
+      if (data.noteSessionId)
+        meetingNoteSession.current = { id: data.noteSessionId, noteId: data.noteId };
       setActiveFolderId(data.folderId);
       setActiveNoteId(data.noteId);
       setActiveView("personal-notes");
@@ -470,6 +397,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         noteId: data.noteId,
         folderId: data.folderId,
         event: data.event,
+        trigger: data.trigger,
+        noteSessionId: data.noteSessionId,
       });
       void initializeNotes(null, 50, data.folderId);
       if (
@@ -490,7 +419,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
       meetingNavigationMounted.current = false;
       cleanup?.();
     };
-  }, []);
+  }, [canAutoStartMeeting, meetingNoteSession]);
 
   useEffect(() => {
     const drain = async () => {
@@ -501,6 +430,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         initializeNotes(null, 50, data.folderId);
       }
       setActiveNoteId(data.noteId);
+      void ensureNoteLoaded(data.noteId);
       setActiveView("personal-notes");
     };
     drain();
@@ -513,6 +443,15 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     // start); a bare request (app-menu Cmd+,) keeps an open modal where it is.
     const drain = async (showAnyway: boolean) => {
       const section = await window.electronAPI?.getPendingSettingsSection?.();
+      // Integrations is a view, not a Settings section.
+      if (section?.startsWith(INTEGRATIONS_TARGET_PREFIX)) {
+        setIntegrationsSection(
+          section.slice(INTEGRATIONS_TARGET_PREFIX.length) as IntegrationsSection
+        );
+        setActiveView("integrations");
+        setShowSettings(false);
+        return;
+      }
       if (section) {
         setSettingsSection(section);
         setSettingsRequest((count) => count + 1);
@@ -564,6 +503,20 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     setActiveView("integrations");
   }, []);
   const handleOpenSkillRequestHandled = useCallback(() => setOpenSkillRequest(null), []);
+  const openNoteInNotes = useCallback(
+    (noteId: number, folderId: number | null, spaceId?: number | null) => {
+      if (folderId != null) setActiveFolderId(folderId);
+      else if (spaceId != null) navigateToContainer(spaceId, null);
+      setActiveNoteId(noteId);
+      void ensureNoteLoaded(noteId);
+      setActiveView("personal-notes");
+    },
+    []
+  );
+  const openChatSourceNote = useCallback(
+    (note: SourceNote) => openNoteInNotes(note.id, note.folderId, note.spaceId),
+    [openNoteInNotes]
+  );
 
   // The side-panel layout is shared by meeting mode and by a note opened in a
   // narrow window, so leaving it means different things in each case.
@@ -692,7 +645,12 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
           return;
         }
         if (!managed && !isTranscriptionContextAllowed(usePolicyStore.getState(), s, "dictation")) {
-          toast({ title: t("common.managedByOrg"), variant: "default" });
+          const refusal = transcriptionChoiceRefusal(usePolicyStore.getState(), s, "dictation");
+          toast({
+            title: t(refusal?.messageKey ?? "common.managedByOrg"),
+            variant: "default",
+            ...(refusal ? { actions: providerErrorActions(refusal, t) } : {}),
+          });
           return;
         }
         const result = await window.electronAPI.retryTranscription(id, {
@@ -917,6 +875,11 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
           try {
             await installUpdate();
           } catch (error) {
+            const policyMessage = updatePolicyMessageKey(error);
+            if (policyMessage) {
+              toast({ title: t(policyMessage) });
+              return;
+            }
             toast({
               title: t("controlPanel.update.couldNotInstallTitle"),
               description: t("controlPanel.update.couldNotInstallDescription"),
@@ -929,6 +892,11 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
       try {
         await downloadUpdate();
       } catch (error) {
+        const policyMessage = updatePolicyMessageKey(error);
+        if (policyMessage) {
+          toast({ title: t(policyMessage) });
+          return;
+        }
         toast({
           title: t("controlPanel.update.couldNotDownloadTitle"),
           description: t("controlPanel.update.couldNotDownloadDescription"),
@@ -1005,13 +973,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         onOk={() => {}}
       />
 
-      <UpgradePrompt
-        open={showUpgradePrompt}
-        onOpenChange={setShowUpgradePrompt}
-        wordsUsed={limitData?.wordsUsed}
-        limit={limitData?.limit}
-      />
-
       <PostMigrationOnboarding
         open={showPostMigration}
         onOpenChange={setShowPostMigration}
@@ -1033,41 +994,13 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         </Suspense>
       )}
 
-      {showReferrals && (
-        <Suspense fallback={null}>
-          <ReferralModal open={showReferrals} onOpenChange={setShowReferrals} />
-        </Suspense>
-      )}
-
-      <AcceptInvitationModal
-        token={invitationToken}
-        onClose={() => setInvitationToken(null)}
-        onAccepted={(entry) => {
-          setInvitationNotesEntry(entry);
-          setActiveView("personal-notes");
-        }}
-      />
-
-      <JoinYourTeamModal
-        joinable={joinable}
-        domain={user?.email?.split("@")[1] ?? null}
-        onDismiss={dismissJoinable}
-        onRequested={markRequested}
-        onJoined={() => setActiveView("personal-notes")}
-      />
-
       {/* Always mounted so the palette chunk is warm and Radix can play its exit animation. */}
       <Suspense fallback={null}>
         <CommandSearch
           open={showSearch}
           onOpenChange={setShowSearch}
           transcriptions={history}
-          onNoteSelect={(id, folderId, spaceId) => {
-            if (folderId != null) setActiveFolderId(folderId);
-            else if (spaceId != null) navigateToContainer(spaceId, null);
-            setActiveNoteId(id);
-            setActiveView("personal-notes");
-          }}
+          onNoteSelect={openNoteInNotes}
           onContainerSelect={(spaceId, folderId) => {
             navigateToContainer(spaceId, folderId);
             setActiveView("personal-notes");
@@ -1098,20 +1031,14 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         >
           <ControlPanelSidebar
             activeView={activeView}
+            chatNeedsAttention={activeView !== "chat" && chatNeedsAttention}
             onViewChange={setActiveView}
             onOpenSettings={() => {
               setSettingsSection(undefined);
               setShowSettings(true);
             }}
-            onOpenReferrals={() => setShowReferrals(true)}
-            onUpgrade={() => {
-              setSettingsSection("plansBilling");
-              setShowSettings(true);
-            }}
-            isOverLimit={usage?.isOverLimit ?? false}
-            isSignedIn={isSignedIn}
-            upsell={upsell}
             updateAction={
+              updateStatus.updateMode !== "it_managed" &&
               !updateStatus.isDevelopment &&
               (updateStatus.updateAvailable ||
                 updateStatus.updateDownloaded ||
@@ -1145,7 +1072,14 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                 <div className="flex items-center gap-2">
                   <NewNoteMenu
                     onNewNote={handleNewNote}
-                    onNewChat={agentAllowedByPolicy ? () => setActiveView("chat") : undefined}
+                    onNewChat={
+                      agentAllowedByPolicy
+                        ? () => {
+                            startNewChat();
+                            setActiveView("chat");
+                          }
+                        : undefined
+                    }
                   />
                 </div>
               }
@@ -1164,9 +1098,14 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                         </p>
                         <p className="text-xs text-amber-700 dark:text-amber-300/80">
                           <BidiInterpolatedText
-                            text={t("controlPanel.updateRequiredByOrg.description", {
-                              version: BIDI_VALUE_TOKEN,
-                            })}
+                            text={t(
+                              updateStatus.updateMode === "it_managed"
+                                ? "controlPanel.updateRequiredByOrg.contactIT"
+                                : "controlPanel.updateRequiredByOrg.description",
+                              {
+                                version: BIDI_VALUE_TOKEN,
+                              }
+                            )}
                             value={policyMinAppVersion}
                           />
                         </p>
@@ -1176,38 +1115,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                 </div>
               )}
               <RequiredModelsBanner />
-              {usage?.isPastDue && activeView === "home" && (
-                <div className={cn(PAGE_CONTENT_WIDTH_CLASS, "px-6 mb-3")}>
-                  <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 p-3">
-                    <div className="flex items-start gap-3">
-                      <div className="shrink-0 w-8 h-8 rounded-md bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
-                        <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-amber-900 dark:text-amber-200 mb-0.5">
-                          {t("controlPanel.billing.pastDueTitle")}
-                        </p>
-                        <p className="text-xs text-amber-700 dark:text-amber-300/80 mb-2">
-                          {t("controlPanel.billing.bannerDescription", {
-                            limit: usage.limit.toLocaleString(),
-                          })}
-                        </p>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            setSettingsSection("account");
-                            setShowSettings(true);
-                          }}
-                        >
-                          {t("controlPanel.billing.updatePayment")}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
               {(gpuAccelAvailable.transcription || gpuAccelAvailable.intelligence) &&
                 activeView === "home" &&
                 !gpuBannerDismissed && (
@@ -1277,20 +1184,11 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                     setSettingsSection(section);
                     setShowSettings(true);
                   }}
-                  onOpenIntegrations={() => {
-                    setIntegrationsSection("calendars");
-                    setActiveView("integrations");
-                  }}
                 />
               )}
               {activeView === "insights" && (
                 <Suspense fallback={null}>
-                  <InsightsView
-                    onSignIn={() => {
-                      setSettingsSection("account");
-                      setShowSettings(true);
-                    }}
-                  />
+                  <InsightsView />
                 </Suspense>
               )}
               {activeView === "chat" && agentAllowedByPolicy && (
@@ -1299,6 +1197,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                     skillRequest={skillChatRequest}
                     onSkillRequestHandled={handleSkillChatRequestHandled}
                     onOpenSkill={openSkill}
+                    onOpenNote={openChatSourceNote}
                   />
                 </Suspense>
               )}
@@ -1310,9 +1209,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                       setShowSettings(true);
                     }}
                     meetingRecordingRequest={meetingRecordingRequest}
+                    canAutoStartMeeting={canAutoStartMeeting}
                     onMeetingRecordingRequestHandled={handleMeetingRecordingRequestHandled}
-                    invitationEntry={invitationNotesEntry}
-                    onInvitationEntryHandled={() => setInvitationNotesEntry(null)}
                   />
                 </Suspense>
               )}
@@ -1344,11 +1242,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
               {activeView === "integrations" && (
                 <Suspense fallback={null}>
                   <IntegrationsView
-                    isPaid={usage?.hasPaidAccessOptimistic ?? false}
-                    onUpgrade={() => {
-                      setSettingsSection("plansBilling");
-                      setShowSettings(true);
-                    }}
                     section={integrationsSection}
                     onSectionChange={setIntegrationsSection}
                     onStartSkillChat={agentAllowedByPolicy ? startSkillChat : undefined}
@@ -1363,8 +1256,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
       </div>
       <BackgroundActionToastListener />
       <AssistantNoteUndoListener />
-      <SpaceSyncToastListener />
-      <SharedDictionaryArrivalToastListener onViewWords={showDictionary} />
     </div>
   );
 }

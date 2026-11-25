@@ -9,7 +9,7 @@ export function bundledHelp(topic, reason) {
     reason,
     retrievedAt: null,
     articles: [
-      { title: topic, url: DOCS_ORIGIN + article.path, path: article.path, text: article.text },
+      { title: topic, url: DOCS_ORIGIN, path: article.path, text: article.text },
     ],
   };
 }

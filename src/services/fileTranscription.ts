@@ -1,14 +1,6 @@
-import { withSessionRefresh } from "../lib/auth";
-import {
-  resolveTranscriptionRoute,
-  type ManagedTranscriptionResolution,
-  type TranscriptionRoute,
-} from "../helpers/transcriptionRoute";
-import {
-  getManagedTranscriptionResolution,
-  isManagedTranscriptionActive,
-} from "./managedTranscription";
-import { getTranscriptionProviders } from "../models/ModelRegistry";
+import { resolveTranscriptionRoute, type TranscriptionRoute } from "../helpers/transcriptionRoute";
+import { isManagedTranscriptionActive } from "./managedTranscription";
+import i18n from "../i18n";
 import type { LocalTranscriptionProvider } from "../types/electron";
 
 export interface FileTranscriptionResult {
@@ -68,6 +60,7 @@ export interface TranscriptionApiKeys {
   tinfoilApiKey: string;
   deepgramApiKey: string;
   assemblyaiApiKey: string;
+  openrouterApiKey: string;
   customTranscriptionApiKey?: string;
 }
 
@@ -89,6 +82,8 @@ export function getTranscriptionApiKey(provider: string, keys: TranscriptionApiK
       return keys.deepgramApiKey;
     case "assemblyai":
       return keys.assemblyaiApiKey;
+    case "openrouter":
+      return keys.openrouterApiKey;
     case "custom":
       return keys.customTranscriptionApiKey || "";
     default:
@@ -96,64 +91,45 @@ export function getTranscriptionApiKey(provider: string, keys: TranscriptionApiK
   }
 }
 
-// Pre-flight through the shared resolver: code-carrying errors (incl. the
-// Tinfoil-URL and fail-closed custom guards) surface here without an IPC
-// round-trip; the main-process handler re-resolves the same fields as
-// defense in depth.
-export function resolveFileTranscriptionRoute(
-  cfg: FileTranscriptionConfig,
-  managed: ManagedTranscriptionResolution | null = null
-): TranscriptionRoute {
+// Shared by the upload and assistant recorder. Only explicit self-hosted
+// settings reach the common resolver, so a stale Custom URL cannot take over.
+export function resolveFileTranscriptionRoute(cfg: FileTranscriptionConfig): TranscriptionRoute {
+  if (cfg.useLocalWhisper && (!cfg.transcriptionMode || cfg.transcriptionMode === "local")) {
+    return { transport: "local" };
+  }
+  if (cfg.transcriptionMode !== "self-hosted") {
+    return {
+      transport: "error",
+      message: i18n.t("common.policyTranscriptionRestricted"),
+      code: "LOCAL_ONLY",
+    };
+  }
+  if (!cfg.remoteTranscriptionUrl?.trim()) {
+    return {
+      transport: "error",
+      message: i18n.t("notes.actions.errors.noEndpoint"),
+      code: "LOCAL_ONLY",
+    };
+  }
   return resolveTranscriptionRoute({
     settings: {
-      transcriptionMode: cfg.transcriptionMode,
+      transcriptionMode: "self-hosted",
       remoteTranscriptionUrl: cfg.remoteTranscriptionUrl,
       remoteTranscriptionModel: cfg.remoteTranscriptionModel,
-      cloudTranscriptionProvider: cfg.cloudTranscriptionProvider,
-      cloudTranscriptionModel: cfg.cloudTranscriptionModel,
-      cloudTranscriptionBaseUrl: cfg.cloudTranscriptionBaseUrl,
-      cortiEnvironment: cfg.cortiEnvironment,
-      cortiTenant: cfg.cortiTenant,
     },
-    providers: getTranscriptionProviders(),
-    managed,
     request: { effectiveLanguage: cfg.language || undefined },
   });
 }
 
-// Single provider dispatch shared by the single-file flow and the batch queue,
-// so BYOK providers receive identical options in both.
+// Single dispatch for both the single-file flow and the batch queue.
 export async function transcribeFile(
   filePath: string,
   cfg: FileTranscriptionConfig,
   diarize: boolean,
   opts: { requestId?: string; timestamps?: boolean; purpose?: "dictation" | "upload" } = {}
 ): Promise<FileTranscriptionResult> {
-  // Managed enterprise STT outranks every personal lane, OpenWhispr Cloud and
-  // local included: under managed_required no audio may leave the tenant.
-  const managed = getManagedTranscriptionResolution();
-  if (managed?.kind === "error") {
-    return {
-      success: false,
-      error: managed.message,
-      code: managed.code,
-      messageKey: managed.messageKey,
-    };
-  }
-
-  if (!managed && cfg.isOpenWhisprCloud) {
-    return withSessionRefresh(async () => {
-      const r = await window.electronAPI.transcribeAudioFileCloud!(filePath, opts);
-      if (!r.success && r.code) {
-        throw Object.assign(new Error(r.error || "Cloud transcription failed"), {
-          code: r.code,
-        });
-      }
-      return r;
-    });
-  }
-
-  if (!managed && cfg.useLocalWhisper) {
+  const route = resolveFileTranscriptionRoute(cfg);
+  if (route.transport === "local") {
     const provider = cfg.localTranscriptionProvider as LocalTranscriptionProvider;
     return window.electronAPI.transcribeAudioFile(filePath, {
       provider,
@@ -171,7 +147,6 @@ export async function transcribeFile(
     });
   }
 
-  const route = resolveFileTranscriptionRoute(cfg, managed);
   if (route.transport === "error") {
     return {
       success: false,
@@ -180,24 +155,23 @@ export async function transcribeFile(
       messageKey: route.messageKey,
     };
   }
-
-  // Self-hosted fields make the handler route to the configured server
-  // (fail-closed on misconfiguration) instead of stale BYOK settings.
+  if (route.transport !== "http-batch" || route.provider !== "self-hosted") {
+    return {
+      success: false,
+      error: i18n.t("notes.actions.errors.noEndpoint"),
+      code: "LOCAL_ONLY",
+    };
+  }
+  // Main reads the saved self-hosted token. No provider key from a legacy
+  // configuration can be forwarded to this endpoint.
   return window.electronAPI.transcribeAudioFileByok!({
     filePath,
     requestId: opts.requestId,
     purpose: opts.purpose,
-    managed: managed?.kind === "managed" ? managed : undefined,
-    apiKey: cfg.getApiKey(),
-    baseUrl: cfg.cloudTranscriptionBaseUrl,
-    model: cfg.cloudTranscriptionModel,
     diarize: diarize || undefined,
     timestamps: opts.timestamps || undefined,
-    provider: cfg.cloudTranscriptionProvider,
     language: cfg.language,
-    environment: cfg.cortiEnvironment,
-    tenant: cfg.cortiTenant,
-    transcriptionMode: cfg.transcriptionMode,
+    transcriptionMode: "self-hosted",
     remoteTranscriptionUrl: cfg.remoteTranscriptionUrl,
     remoteTranscriptionModel: cfg.remoteTranscriptionModel,
   });

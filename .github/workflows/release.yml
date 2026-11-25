@@ -5,8 +5,14 @@ permissions:
   contents: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-22.04
+    env:
+      CFLAGS: "-march=x86-64 -mtune=generic"
+      CXXFLAGS: "-march=x86-64 -mtune=generic"
+      CC: clang-15
+      CXX: clang++-15
+      OPENWHISPR_VERIFY_SQLITE_BASELINE: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,21 +22,42 @@ jobs:
           node-version: 24
           cache: npm
       - run: |
-          test ! -d .github/upstream-conflicts
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            test ! -d .github/upstream-conflicts
+          fi
           npm ci --ignore-scripts
+          npm run apply:patches --if-present
           npm rebuild better-sqlite3 --runtime=node
           npm run typecheck
           node scripts/whisprlocal/checks.cjs
           npm run test:local
-      - run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libpipewire-0.3-dev libfuse2t64
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-15 libx11-dev libxtst-dev libatspi2.0-dev libglib2.0-dev libpipewire-0.3-dev libfuse2 libgtk-3-0 libnss3 libasound2
+      - name: Install QEMU for the packaged SQLite baseline check
+        run: |
+          qemu_dir="$RUNNER_TEMP/sqlite-qemu"
+          mkdir -p "$qemu_dir"
+          docker run --rm -v "$qemu_dir:/output" debian:trixie-slim sh -ec '
+            apt-get update
+            cd /tmp
+            apt-get download qemu-user
+            dpkg-deb --extract qemu-user_*.deb /tmp/qemu
+            cp /tmp/qemu/usr/bin/qemu-x86_64 /output/qemu-x86_64
+          '
+          "$qemu_dir/qemu-x86_64" --version
+          echo "$qemu_dir" >> "$GITHUB_PATH"
       - run: node node_modules/electron/install.js && node node_modules/ffmpeg-static/install.js
       - run: npm run download:embedding-model -- --for-build
       - run: npm run build:linux -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           ONNXRUNTIME_NODE_INSTALL: skip
+      - run: dist/linux-unpacked/resources/bin/qdrant-linux-x64 --version
       - run: |
           cd dist
+          test -s latest-linux.yml
           sha256sum WhisprLocal-*-linux-x64.deb WhisprLocal-*-linux-x64.AppImage WhisprLocal-*-linux-x64.tar.gz > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
@@ -39,12 +66,13 @@ jobs:
             dist/WhisprLocal-*-linux-x64.deb
             dist/WhisprLocal-*-linux-x64.AppImage
             dist/WhisprLocal-*-linux-x64.tar.gz
-            dist/*.yml
-            dist/*.blockmap
+            dist/latest-linux.yml
             dist/SHA256SUMS
           if-no-files-found: error
+          retention-days: 7
   draft:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -62,4 +90,6 @@ jobs:
           version=${file#WhisprLocal-}; version=${version%-linux-x64.deb}
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           printf 'Independent Linux x86_64 edition. Review the artifacts and checks before publishing this draft. See the repository for English and French documentation.\n' > notes.md
-          gh release create "v$version" release/* --target "$COMMIT" --draft --title "WhisprLocal $version" --notes-file notes.md
+          gh release create "v$version" "release/WhisprLocal-$version-linux-x64."{deb,AppImage,tar.gz} \
+            release/latest-linux.yml release/SHA256SUMS --target "$COMMIT" --draft \
+            --title "WhisprLocal $version" --notes-file notes.md

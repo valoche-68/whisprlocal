@@ -17,6 +17,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: npm run apply:patches --if-present
       - run: npm rebuild better-sqlite3 --runtime=node
       - run: npm run typecheck && npm run build:renderer
       - run: node scripts/whisprlocal/checks.cjs && npm run test:local

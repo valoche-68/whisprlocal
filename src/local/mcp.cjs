@@ -1,6 +1,7 @@
 const { operations } = require("./operations.cjs");
 const { invoke, readBridge } = require("./bridgeClient.cjs");
 const readline = require("node:readline");
+const { version } = require("../../package.json");
 const versions = ["2025-06-18", "2025-03-26", "2024-11-05"];
 async function dispatch(message, bridge) {
   if (message?.jsonrpc !== "2.0" || typeof message.method !== "string")
@@ -13,7 +14,7 @@ async function dispatch(message, bridge) {
           ? message.params.protocolVersion
           : versions[0],
         capabilities: { tools: {} },
-        serverInfo: { name: "whisprlocal", version: "0.1.0" },
+        serverInfo: { name: "whisprlocal", version },
         instructions:
           "Local application data. Deletion and updates modify the user's files; ask for user approval in your MCP client. The desktop application must be running.",
       };

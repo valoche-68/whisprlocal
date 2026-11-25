@@ -13,8 +13,9 @@ const {
 
 const QDRANT_REPO = "qdrant/qdrant";
 
-// Version can be pinned via environment variable for reproducible builds
-const VERSION_OVERRIDE = process.env.QDRANT_VERSION || null;
+// Qdrant publishes releases before their binary build jobs finish. Pin a complete
+// release so every platform packages the same version, independent of upstream timing.
+const QDRANT_VERSION = process.env.QDRANT_VERSION || "v1.20.1";
 
 const BINARIES = {
   "darwin-arm64": {
@@ -28,7 +29,8 @@ const BINARIES = {
     outputName: "qdrant-darwin-x64",
   },
   "linux-x64": {
-    archiveName: "qdrant-x86_64-unknown-linux-gnu.tar.gz",
+    // The GNU build can require a newer glibc than the supported desktop.
+    archiveName: "qdrant-x86_64-unknown-linux-musl.tar.gz",
     binaryName: "qdrant",
     outputName: "qdrant-linux-x64",
   },
@@ -47,11 +49,7 @@ let cachedRelease = null;
 async function getRelease() {
   if (cachedRelease) return cachedRelease;
 
-  if (VERSION_OVERRIDE) {
-    cachedRelease = await fetchLatestRelease(QDRANT_REPO, { tagPrefix: VERSION_OVERRIDE });
-  } else {
-    cachedRelease = await fetchLatestRelease(QDRANT_REPO);
-  }
+  cachedRelease = await fetchLatestRelease(QDRANT_REPO, { tag: QDRANT_VERSION });
   return cachedRelease;
 }
 
@@ -60,9 +58,10 @@ function getDownloadUrl(release, archiveName) {
   return asset?.url || null;
 }
 
-function isCurrentVersion(markerPath, version) {
+function isCurrentAsset(markerPath, version, archiveName) {
   try {
-    return JSON.parse(fs.readFileSync(markerPath, "utf8")).version === version;
+    const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+    return marker.version === version && marker.archiveName === archiveName;
   } catch {
     return false;
   }
@@ -77,7 +76,11 @@ async function downloadBinary(platformArch, config, release, isForce = false) {
   const outputPath = path.join(BIN_DIR, config.outputName);
   const markerPath = path.join(BIN_DIR, `.qdrant-${platformArch}.json`);
 
-  if (fs.existsSync(outputPath) && !isForce && isCurrentVersion(markerPath, release.tag)) {
+  if (
+    fs.existsSync(outputPath) &&
+    !isForce &&
+    isCurrentAsset(markerPath, release.tag, config.archiveName)
+  ) {
     console.log(`  [qdrant] ${platformArch}: Already up to date (${release.tag})`);
     return true;
   }
@@ -102,7 +105,10 @@ async function downloadBinary(platformArch, config, release, isForce = false) {
     if (binaryPath) {
       fs.copyFileSync(binaryPath, outputPath);
       setExecutable(outputPath);
-      fs.writeFileSync(markerPath, JSON.stringify({ version: release.tag }));
+      fs.writeFileSync(
+        markerPath,
+        JSON.stringify({ version: release.tag, archiveName: config.archiveName })
+      );
       console.log(`  [qdrant] ${platformArch}: Extracted to ${config.outputName}`);
     } else {
       console.error(
@@ -122,11 +128,7 @@ async function downloadBinary(platformArch, config, release, isForce = false) {
 }
 
 async function main() {
-  if (VERSION_OVERRIDE) {
-    console.log(`\n[qdrant] Using pinned version: ${VERSION_OVERRIDE}`);
-  } else {
-    console.log("\n[qdrant] Fetching latest release...");
-  }
+  console.log(`\n[qdrant] Using pinned version: ${QDRANT_VERSION}`);
   const release = await getRelease();
 
   if (!release) {

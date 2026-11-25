@@ -12,6 +12,14 @@ files.push(
   "test/helpers/settingsStoreSpeechDeletion.test.js",
   "test/hooks/modelDownloadErrors.test.js",
   "test/helpers/secretKeys.test.js",
+  "test/helpers/localEditionDatabase.test.js",
+  "test/helpers/updater.test.js",
+  "test/helpers/kdeRetiredAgentShortcut.test.js",
+  "test/helpers/qdrantManager.test.js",
+  "test/helpers/uiLanguageStartup.test.js",
+  "test/components/onboardingFlow.test.js",
+  "test/components/setupEligibility.test.js",
+  "test/components/localIntegrations.test.js",
   "test/components/toneStyleSection.test.js",
   "test/components/localDictationAgentSettings.test.js"
 );

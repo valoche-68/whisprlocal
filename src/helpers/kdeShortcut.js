@@ -109,9 +109,30 @@ const QT_KEYS = {
 };
 
 const COMPONENT_NAME = "openwhispr";
+const DBUS_CALL_TIMEOUT_MS = 2000;
+
+function callWithDeadline(call, connection, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const finish = (error, result) => {
+      clearTimeout(timer);
+      connection?.removeListener("error", finish);
+      if (error) reject(error);
+      else resolve(result);
+    };
+    // A failed or unavailable session bus can leave the callback pending.
+    const timer = setTimeout(() => finish(new Error("KGlobalAccel did not respond")), timeoutMs);
+    connection?.once("error", finish);
+    try {
+      call(finish);
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
 
 class KDEShortcutManager {
-  constructor() {
+  constructor({ callTimeoutMs = DBUS_CALL_TIMEOUT_MS } = {}) {
+    this.callTimeoutMs = callTimeoutMs;
     this.bus = null;
     this.kglobalaccel = null;
     this.componentProxy = null;
@@ -164,21 +185,28 @@ class KDEShortcutManager {
       this.bus.connection.on("error", (err) => {
         debugLogger.log("[KDEShortcut] D-Bus connection error:", err.message);
       });
-      this.kglobalaccel = await new Promise((resolve, reject) => {
-        this.bus
-          .getService("org.kde.kglobalaccel")
-          .getInterface("/kglobalaccel", "org.kde.KGlobalAccel", (err, iface) => {
-            if (err) return reject(err);
-            resolve(iface);
-          });
-      });
+      this.kglobalaccel = await callWithDeadline(
+        (callback) =>
+          this.bus
+            .getService("org.kde.kglobalaccel")
+            .getInterface("/kglobalaccel", "org.kde.KGlobalAccel", callback),
+        this.bus.connection,
+        this.callTimeoutMs
+      );
+      if (!this.kglobalaccel) throw new Error("KGlobalAccel interface not available");
 
       debugLogger.log("[KDEShortcut] Connected to KGlobalAccel D-Bus");
       return true;
     } catch (err) {
       debugLogger.log("[KDEShortcut] Failed to connect:", err.message);
+      const connection = this.bus?.connection;
       this.bus = null;
       this.kglobalaccel = null;
+      try {
+        connection?.end();
+      } catch {
+        // Connection may already be closed.
+      }
       return false;
     }
   }
@@ -400,12 +428,11 @@ class KDEShortcutManager {
     const actionId = [COMPONENT_NAME, slotName, "OpenWhispr", `OpenWhispr ${slotName}`];
 
     try {
-      await new Promise((resolve, reject) => {
-        this.kglobalaccel.unRegister(actionId, (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
-      });
+      await callWithDeadline(
+        (callback) => this.kglobalaccel.unRegister(actionId, callback),
+        this.bus?.connection,
+        this.callTimeoutMs
+      );
       this.callbacks.delete(slotName);
       this.registeredSlots.delete(slotName);
       debugLogger.log("[KDEShortcut] Unregistered", { slot: slotName });

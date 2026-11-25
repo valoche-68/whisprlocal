@@ -12,8 +12,6 @@ import {
 } from "./integrations/integrationsSections";
 import type { SkillChatStart, SkillOpenRequest } from "../types/skills";
 interface Props {
-  isPaid: boolean;
-  onUpgrade: () => void;
   section: IntegrationsSection;
   onSectionChange: (s: IntegrationsSection) => void;
   onStartSkillChat?: (s: SkillChatStart) => void;

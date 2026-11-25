@@ -42,13 +42,20 @@ function makeAutoUpdater({ offline = false } = {}) {
   return autoUpdater;
 }
 
-// updater.js requires electron and child_process lazily (constructor, cleanup(),
-// Rosetta probe), so the mocks stay installed until afterEach.
+// Keep the AppImage updater and the managed Linux updater isolated from the network.
 function createUpdateManager(autoUpdater) {
   delete require.cache[updaterModulePath];
   Module._load = function loadWithMocks(request, parent, isMain) {
     if (request === "electron-updater") return { autoUpdater };
-    if (request === "electron") return { autoUpdater: { on() {}, removeListener() {} } };
+    if (request === "./local/linuxUpdateBackend.cjs") return class {
+      constructor() {
+        return autoUpdater;
+      }
+    };
+    if (request === "electron") {
+      const emitter = { on() {}, removeListener() {} };
+      return { autoUpdater: emitter, app: emitter };
+    }
     if (request === "child_process") return { execSync: () => "0" };
     return originalLoad.call(this, request, parent, isMain);
   };
@@ -74,9 +81,8 @@ function setPlatform(platform) {
 beforeEach((t) => {
   t.mock.method(console, "log", () => {});
   t.mock.method(console, "error", () => {});
-  // The updater is unsupported on Linux outside an AppImage, so a test that
-  // does not pick a platform would never check for updates on a Linux CI runner.
-  setPlatform("darwin");
+  setPlatform("linux");
+  process.env.APPIMAGE = "/opt/WhisprLocal.AppImage";
 });
 
 afterEach(() => {
@@ -86,7 +92,7 @@ afterEach(() => {
   else process.env.APPIMAGE = originalAppImage;
 });
 
-test("startup and periodic checks run whether or not automatic updates are on", (t) => {
+test("startup and periodic checks run whether or not automatic updates are on", async (t) => {
   for (const enabled of [true, false, null]) {
     t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
     const autoUpdater = makeAutoUpdater();
@@ -96,8 +102,10 @@ test("startup and periodic checks run whether or not automatic updates are on", 
     manager.checkForUpdatesOnStartup();
     t.mock.timers.tick(STARTUP_DELAY_MS);
     assert.equal(autoUpdater.calls, 1, `startup check with preference ${enabled}`);
+    await new Promise(setImmediate);
     t.mock.timers.tick(PERIODIC_INTERVAL_MS);
     assert.equal(autoUpdater.calls, 2, `periodic check with preference ${enabled}`);
+    await new Promise(setImmediate);
 
     manager.cleanup();
     t.mock.timers.reset();
@@ -144,27 +152,13 @@ test("with automatic updates off, an available update waits for the user", () =>
   manager.cleanup();
 });
 
-test("deferInstallOnQuit clears the flag the NSIS and AppImage quit handlers read", () => {
+test("deferInstallOnQuit clears the AppImage installer flag", () => {
   const autoUpdater = makeAutoUpdater();
   const manager = createUpdateManager(autoUpdater);
   assert.equal(autoUpdater.autoInstallOnAppQuit, true);
 
   manager.deferInstallOnQuit();
   assert.equal(autoUpdater.autoInstallOnAppQuit, false);
-
-  manager.cleanup();
-});
-
-test("only a macOS update that Squirrel already holds counts as staged", () => {
-  const autoUpdater = makeAutoUpdater();
-  const manager = createUpdateManager(autoUpdater);
-  assert.equal(manager.hasStagedUpdate(), false);
-
-  autoUpdater.squirrelDownloadedUpdate = true;
-  assert.equal(manager.hasStagedUpdate(), true);
-
-  setPlatform("win32");
-  assert.equal(manager.hasStagedUpdate(), false);
 
   manager.cleanup();
 });
@@ -202,38 +196,28 @@ test("a failed background check only reaches renderers as update-error", (t) => 
   manager.cleanup();
 });
 
-test("on macOS and Windows the updater reports itself as supported", async () => {
+test("on macOS and Windows the updater reports itself as unsupported", async () => {
   for (const platform of ["darwin", "win32"]) {
     setPlatform(platform);
     const manager = createUpdateManager(makeAutoUpdater());
-    assert.equal((await manager.getUpdateStatus()).isSupported, true, platform);
+    assert.equal((await manager.getUpdateStatus()).isSupported, false, platform);
     manager.cleanup();
   }
 });
 
-test("a Linux AppImage is supported, but deb/rpm/tar.gz installs never touch the feed", async (t) => {
-  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
-  setPlatform("linux");
-
-  process.env.APPIMAGE = "/opt/OpenWhispr.AppImage";
-  const appImage = createUpdateManager(makeAutoUpdater());
-  assert.equal((await appImage.getUpdateStatus()).isSupported, true);
-  appImage.cleanup();
-
-  delete process.env.APPIMAGE;
-  const autoUpdater = makeAutoUpdater();
-  const packaged = createUpdateManager(autoUpdater);
-  packaged.setAutoUpdatesEnabled(true);
-  assert.equal((await packaged.getUpdateStatus()).isSupported, false);
-
-  packaged.checkForUpdatesOnStartup();
-  t.mock.timers.tick(STARTUP_DELAY_MS + PERIODIC_INTERVAL_MS);
-  assert.equal(autoUpdater.calls, 0, "no automatic checks are scheduled");
-
-  const result = await packaged.checkForUpdates();
-  assert.equal(autoUpdater.calls, 0, "a manual check short-circuits too");
-  assert.equal(result.updateAvailable, false);
-  assert.match(result.message, /package manager/);
-
-  packaged.cleanup();
+test("AppImage and managed Linux installs only use the WhisprLocal release feed", async () => {
+  for (const appImage of [true, false]) {
+    if (!appImage) delete process.env.APPIMAGE;
+    const autoUpdater = makeAutoUpdater();
+    autoUpdater.setFeedURL = (feed) => {
+      assert.deepEqual(feed, {
+        provider: "github", owner: "valoche-68", repo: "whisprlocal", private: false,
+      });
+    };
+    const manager = createUpdateManager(autoUpdater);
+    assert.equal((await manager.getUpdateStatus()).isSupported, true);
+    assert.equal((await manager.checkForUpdates()).updateAvailable, false);
+    assert.equal(autoUpdater.calls, 1);
+    manager.cleanup();
+  }
 });

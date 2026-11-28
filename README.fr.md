@@ -6,7 +6,7 @@
 
 > Projet indépendant, **sans affiliation avec OpenWhispr, Gizmo Labs ou OpenAI**, sans approbation ni exploitation par ces organisations. Whisper est un modèle initialement publié par OpenAI ; son utilisation ne crée aucune affiliation.
 
-La version **0.3.0** du projet repose sur **OpenWhispr 1.12.1**. Le tag et le commit amont figurent dans [`upstream.json`](upstream.json).
+La version **0.3.0** du projet repose sur **OpenWhispr 1.12.2**. Le tag et le commit amont figurent dans [`upstream.json`](upstream.json).
 
 ## La même interface, centrée sur le local
 

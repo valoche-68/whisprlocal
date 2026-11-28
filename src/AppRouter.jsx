@@ -7,6 +7,7 @@ import BackgroundModelDownloadTray from "./components/onboarding/BackgroundModel
 import { useControlPanelWindowDrag } from "./hooks/useControlPanelWindowDrag";
 import { useTheme } from "./hooks/useTheme";
 import { usePolicyStore } from "./stores/policyStore";
+import { useSettingsStore } from "./stores/settingsStore";
 import { isAgentWindow, isControlPanelWindow } from "./utils/windowContext.ts";
 
 const ControlPanel = React.lazy(() => import("./components/ControlPanel.tsx"));
@@ -45,6 +46,13 @@ function MainApp() {
   const [onboardingCompleted, setOnboardingCompleted] = useState(hasCompletedOnboarding);
   const [initialSettingsSection, setInitialSettingsSection] = useState(undefined);
   useControlPanelWindowDrag(isControlPanel);
+
+  useEffect(() => {
+    const { noteFilesEnabled, noteFilesPath } = useSettingsStore.getState();
+    void window.electronAPI?.noteFilesSetEnabled?.(noteFilesEnabled, noteFilesPath || undefined, {
+      startup: true,
+    });
+  }, []);
 
   useEffect(() => {
     const onStorage = (event) => {

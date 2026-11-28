@@ -41,6 +41,7 @@ import { usePolicyStore } from "../stores/policyStore";
 import { startWorkspaceScopeBridge } from "../stores/workspaceScopeBridge";
 import { useEnsureDefaultWorkspace } from "../hooks/useWorkspace";
 import { usePolicySnapshot, useMeetingAutoTranscriptionCheck } from "../hooks/usePolicy";
+import { getKeytermDictionaryWords, limitBatchKeyterms } from "../utils/snippets";
 import { handleMeetingRecordingRequest } from "../helpers/meetingRecordingRequest";
 import { useMeetingNoteSession } from "../hooks/useMeetingNoteSession";
 import {
@@ -52,7 +53,10 @@ import {
   isUpdateRequiredByOrg,
   transcriptionChoiceRefusal,
 } from "../stores/policyRules";
-import { getManagedTranscriptionResolution } from "../services/managedTranscription";
+import {
+  allowsPersonalDictationCleanup,
+  getManagedTranscriptionResolution,
+} from "../services/managedTranscription";
 import {
   useIsMeetingMode,
   useIsNarrowWindow,
@@ -65,7 +69,10 @@ import {
   DEFAULT_INTEGRATIONS_SECTION,
   type IntegrationsSection,
 } from "./integrations/integrationsSections";
-import { navigateMeetingNotification } from "./meetingNotificationNavigation";
+import {
+  navigateAndLoadMeetingNote,
+  navigateMeetingNotification,
+} from "./meetingNotificationNavigation";
 import MeetingRecordingMount from "./MeetingRecordingMount";
 import MeetingRecordingPill from "./notes/MeetingRecordingPill";
 import NewNoteMenu from "./notes/NewNoteMenu";
@@ -79,6 +86,8 @@ import {
   setActiveFolderId,
   navigateToContainer,
   ensureNoteLoaded,
+  getActiveNoteIdValue,
+  getNoteFromStore,
   useActiveNoteId,
   initializeNotes,
   subscribeMeetingNotificationFolders,
@@ -100,6 +109,7 @@ import logger from "../utils/logger";
 import { useModalGate } from "../stores/modalGateStore";
 import type { SkillChatRequest, SkillChatStart, SkillOpenRequest } from "../types/skills";
 import type { SourceNote } from "./chat/useSourceNote";
+import type { MeetingStartSource } from "../types/electron";
 
 const platform = getCachedPlatform();
 
@@ -167,6 +177,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
     noteId: number;
     folderId: number | null;
     event: any;
+    startSource?: MeetingStartSource;
     trigger?: string;
     noteSessionId?: string;
   } | null>(null);
@@ -271,14 +282,6 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   }, [loadTranscriptions]);
 
   useEffect(() => {
-    const { noteFilesEnabled, noteFilesPath } = useSettingsStore.getState();
-    if (!noteFilesEnabled) return;
-    window.electronAPI?.noteFilesSetEnabled?.(true, noteFilesPath || undefined, {
-      skipRebuild: true,
-    });
-  }, []);
-
-  useEffect(() => {
     if (platform !== "darwin") return;
     const check = window.electronAPI?.getPostMigrationState?.();
     if (!check) {
@@ -364,6 +367,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                 startRecordingForNote(
                   note,
                   recordingRecorderName(note, recordingUser, translate),
+                  "prompt",
                   args.canAutoStart
                 ),
               restoreFromMeetingMode: () => window.electronAPI?.restoreFromMeetingMode?.(),
@@ -390,17 +394,25 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
       }
       if (data.noteSessionId)
         meetingNoteSession.current = { id: data.noteSessionId, noteId: data.noteId };
-      setActiveFolderId(data.folderId);
-      setActiveNoteId(data.noteId);
       setActiveView("personal-notes");
+      await navigateAndLoadMeetingNote(data.noteId, data.spaceId, data.folderId);
+      if (
+        !isCurrent() ||
+        getActiveNoteIdValue() !== data.noteId ||
+        !getNoteFromStore(data.noteId) ||
+        (data.noteSessionId && meetingNoteSession.current?.id !== data.noteSessionId)
+      ) {
+        if (data.noteSessionId) void window.electronAPI?.meetingNoteClosed?.(data.noteSessionId);
+        return;
+      }
       setMeetingRecordingRequest({
         noteId: data.noteId,
         folderId: data.folderId,
         event: data.event,
+        startSource: data.startSource,
         trigger: data.trigger,
         noteSessionId: data.noteSessionId,
       });
-      void initializeNotes(null, 50, data.folderId);
       if (
         data.trigger === "hotkey" &&
         useSettingsStore.getState().meetingHotkeyLayoutMode === "side-panel"
@@ -644,7 +656,15 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
           });
           return;
         }
-        if (!managed && !isTranscriptionContextAllowed(usePolicyStore.getState(), s, "dictation")) {
+        if (
+          !managed &&
+          !isTranscriptionContextAllowed(
+            usePolicyStore.getState(),
+            s,
+            "dictation",
+            allowsPersonalDictationCleanup
+          )
+        ) {
           const refusal = transcriptionChoiceRefusal(usePolicyStore.getState(), s, "dictation");
           toast({
             title: t(refusal?.messageKey ?? "common.managedByOrg"),
@@ -667,6 +687,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
           cohereModel: s.cohereModel,
           whisperModel: s.whisperModel,
           preferredLanguage: s.preferredLanguage,
+          translationSourceLanguage: s.translationSourceLanguage,
+          keyterms: limitBatchKeyterms(getKeytermDictionaryWords(s)),
           transcriptionMode: s.transcriptionMode,
           remoteTranscriptionType: s.remoteTranscriptionType,
           remoteTranscriptionUrl: s.remoteTranscriptionUrl,

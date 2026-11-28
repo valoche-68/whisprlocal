@@ -46,6 +46,7 @@ import { NoteSharingService } from "../../services/NoteSharingService";
 import { fetchSpaceRoster, useSpaceRoster } from "../../hooks/useSpaceRoster";
 import { useAuth } from "../../hooks/useAuth";
 import { RichTextEditor } from "../ui/RichTextEditor";
+import { NoteBacklinks } from "../ui/editorBlocks/NoteBacklinks";
 import type { Editor } from "@tiptap/react";
 import { MeetingTranscriptChat, SelectionBar } from "./MeetingTranscriptChat";
 import {
@@ -73,6 +74,7 @@ import type { NoteActionProgress } from "../../stores/actionProcessingStore";
 import ActionProcessingOverlay from "./ActionProcessingOverlay";
 import NoteBottomBar from "./NoteBottomBar";
 import NoteRecordControl, { RecordingWave } from "./NoteRecordControl";
+import MicMuteButton from "./MicMuteButton";
 import ThemedEmptyIllustration from "../ui/ThemedEmptyIllustration";
 import transcriptsEmptyLight from "../../assets/empty-states/notes-transcripts-light.svg";
 import transcriptsEmptyDark from "../../assets/empty-states/notes-transcripts-dark.svg";
@@ -120,8 +122,8 @@ import { observeFloatingChatLayout } from "./floatingChatLayout";
 import {
   MEETING_RECORDING_REFUSAL_KEYS,
   NOTE_META_CHIP_CLASS,
-  defaultFolderDisplayName,
   folderMatchesQuery,
+  folderPathLabel,
   shouldOfferMeetingSummary,
 } from "./shared";
 
@@ -182,6 +184,7 @@ type LiveMeetingTranscriptChatProps = Omit<
   | "systemPartialSpeakerId"
   | "systemPartialSpeakerName"
   | "isRecording"
+  | "micMuted"
 >;
 
 // Subscribes to live transcript state at this leaf so per-update re-renders
@@ -196,6 +199,7 @@ function LiveMeetingTranscriptChat({
   const systemPartial = useMeetingRecordingStore((s) => s.systemPartial);
   const systemPartialSpeakerId = useMeetingRecordingStore((s) => s.systemPartialSpeakerId);
   const systemPartialSpeakerName = useMeetingRecordingStore((s) => s.systemPartialSpeakerName);
+  const micMuted = useMeetingRecordingStore((s) => s.micMuted);
 
   const knownSpeakers = useMemo(
     () => buildKnownSpeakers(speakerProfiles ?? [], segments, speakerMappings ?? {}),
@@ -211,6 +215,7 @@ function LiveMeetingTranscriptChat({
       systemPartial={systemPartial}
       systemPartialSpeakerId={systemPartialSpeakerId}
       systemPartialSpeakerName={systemPartialSpeakerName}
+      micMuted={micMuted}
       speakerMappings={speakerMappings}
       speakerProfiles={knownSpeakers}
     />
@@ -228,7 +233,8 @@ interface NoteEditorProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onExportNote?: (format: "md" | "txt") => void;
-  onExportTranscript?: (format: "txt" | "srt" | "json" | "md") => void;
+  /** recorderLabel names the original recorder when someone else exports the note. */
+  onExportTranscript?: (format: "txt" | "srt" | "json" | "md", recorderLabel?: string) => void;
   enhancement?: Enhancement;
   /** Runs a template, or an action that edits the summary, on this note. */
   onRunNoteAction?: (action: ActionItem) => void;
@@ -481,7 +487,11 @@ export default function NoteEditor({
   const filteredFolders = useMemo(
     () =>
       folderSearch && folders
-        ? folders.filter((f) => folderMatchesQuery(f, t, folderSearch))
+        ? folders.filter(
+            (f) =>
+              folderMatchesQuery(f, t, folderSearch) ||
+              folderPathLabel(f, folders, t).toLowerCase().includes(folderSearch.toLowerCase())
+          )
         : (folders ?? []),
     [folders, folderSearch, t]
   );
@@ -550,6 +560,12 @@ export default function NoteEditor({
     [recordedByUser, user?.name, user?.email, noteRecorder, parsedParticipants]
   );
   const recorderLabel = recorderTranscriptLabel(meetingIdentity, recordedByUser, t);
+  // Exports name the recorder only on a note known to be someone else's.
+  const knownRecorderId = recorderId ?? note.owner_user_id;
+  const exportRecorderLabel =
+    !recordedByUser && user?.id && knownRecorderId && knownRecorderId !== user.id
+      ? recorderLabel
+      : undefined;
 
   const mentionPeople = useMemo(
     () => collectKnownPeople(meetingIdentity, speakerMappings, displaySegments),
@@ -1097,7 +1113,7 @@ export default function NoteEditor({
       return (["txt", "srt", "md", "json"] as const).map((format) => ({
         id: format,
         label: t(TRANSCRIPT_EXPORT_LABEL_KEYS[format]),
-        onSelect: () => onExportTranscript(format),
+        onSelect: () => onExportTranscript(format, exportRecorderLabel),
       }));
     }
     if (!onExportNote) return [];
@@ -1106,7 +1122,7 @@ export default function NoteEditor({
       label: t(NOTE_EXPORT_LABEL_KEYS[format]),
       onSelect: () => onExportNote(format),
     }));
-  }, [viewMode, onExportTranscript, onExportNote, t]);
+  }, [viewMode, onExportTranscript, onExportNote, exportRecorderLabel, t]);
 
   return (
     <div className="flex h-full min-h-0">
@@ -1224,7 +1240,7 @@ export default function NoteEditor({
                         >
                           <FolderOpen size={11} className="text-foreground/45 shrink-0" />
                           <span dir="auto" className="truncate flex-1">
-                            {defaultFolderDisplayName(folder, t)}
+                            {folderPathLabel(folder, folders, t)}
                           </span>
                           {isCurrent && <Check size={9} className="text-primary shrink-0" />}
                         </DropdownMenuItem>
@@ -1400,6 +1416,7 @@ export default function NoteEditor({
                   onStop={onStopRecording}
                 />
               )}
+              {canEditNote && isRecording && <MicMuteButton />}
               <div className={cn(SPLIT_BUTTON_GROUP_CLASS, "h-[30px] shrink-0")}>
                 <button
                   type="button"
@@ -1491,6 +1508,12 @@ export default function NoteEditor({
             </div>
           )}
 
+        {/* notes that link here with [[title]]. */}
+        <NoteBacklinks
+          noteId={note.id}
+          title={note.title || ""}
+          className={cn(PAGE_CONTENT_WIDTH_CLASS, "shrink-0 px-5")}
+        />
         <div className="flex-1 relative min-h-0">
           <div ref={contentScrollRef} className="h-full overflow-y-auto">
             {viewMode === "transcript" && (hasChatSegments || isRecording) ? (

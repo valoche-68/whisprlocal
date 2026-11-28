@@ -21,7 +21,6 @@ const {
   dialog,
   ipcMain,
   session,
-  systemPreferences,
 } = require("electron");
 const path = require("path");
 const tls = require("tls");
@@ -329,6 +328,7 @@ function initializeCoreManagers() {
   windowManager = new WindowManager();
   hotkeyManager = windowManager.hotkeyManager;
   databaseManager = new DatabaseManager();
+  databaseManager.ensureAccountDefaultFolders();
   clipboardManager = new ClipboardManager();
   whisperManager = new WhisperManager();
   if (process.platform !== "darwin") {
@@ -700,6 +700,11 @@ async function startApp() {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
+  windowManager.onDictationStateChanged = (state, voiceAgentRequested) => {
+    ipcHandlers.dictationCleanupPrewarm.setLifecycleState(state, voiceAgentRequested);
+    trayManager?.updateTrayMenu();
+  };
+
   // Create windows FIRST so the user sees UI as soon as possible.
   // A login launch goes to the tray whatever the preference says: the user asked
   // the OS to start us, not to put a window in front of them at every login.
@@ -773,7 +778,7 @@ async function startApp() {
     if (!isMeetingPress()) return;
     debugLogger.info("Meeting hotkey triggered", {}, "meeting");
     // Usually pressed mid-call: an open panel updates behind the meeting app.
-    windowManager.startManualMeeting({ activate: false });
+    windowManager.startManualMeeting({ activate: false, startSource: "hotkey" });
   };
 
   const savedMeetingKey = environmentManager.getMeetingKey?.() || "";
@@ -823,6 +828,8 @@ async function startApp() {
   powerMonitor.on("resume", () => {
     if (calendarReminderScheduler) calendarReminderScheduler.onWakeFromSleep();
     // Sleep evicts the local GPU model from VRAM; reload it once the driver settles. See #766.
+    // A GPU retry left over from the last wake would fire before then.
+    whisperManager?.cancelWakeGpuRetry();
     if (wakeRewarmTimer) clearTimeout(wakeRewarmTimer);
     wakeRewarmTimer = setTimeout(() => {
       wakeRewarmTimer = null;
@@ -895,16 +902,8 @@ async function startApp() {
   });
   sidecarRegistry.register("qdrant", () => semanticSearch.stop());
 
-  if (process.platform === "win32") {
-    const nircmdStatus = clipboardManager.getNircmdStatus();
-    debugLogger.debug("Windows paste tool status", nircmdStatus);
-  }
-
   trayManager.setWindows(windowManager.mainWindow, windowManager.controlPanelWindow);
   trayManager.setWindowManager(windowManager);
-  // The tray's listen item is a toggle, so it has to rebuild when dictation
-  // starts or stops.
-  windowManager.onDictationStateChanged = () => trayManager.updateTrayMenu();
   trayManager.setCreateControlPanelCallback(() => windowManager.createControlPanelWindow());
   await trayManager.createTray();
 
@@ -1216,8 +1215,8 @@ async function startApp() {
     // If accessibility is missing, notify the normal control panel after the
     // protected macOS features have started. During onboarding the permissions
     // screen owns this guidance, so its event has no ControlPanel listener.
-    const checkAndNotifyAccessibility = () => {
-      if (!systemPreferences.isTrustedAccessibilityClient(false)) {
+    const checkAndNotifyAccessibility = async () => {
+      if (!(await clipboardManager.checkAccessibilityPermissions(true))) {
         debugLogger.info("[Accessibility] macOS accessibility not trusted — notifying renderers");
         if (isLiveWindow(windowManager.controlPanelWindow)) {
           windowManager.controlPanelWindow.webContents.send("accessibility-missing");
@@ -1254,10 +1253,10 @@ async function startApp() {
 
     // Allow renderer to request an accessibility check (e.g. on sign-in).
     // Also sends accessibility-missing events if untrusted.
-    ipcMain.handle("check-accessibility-trusted", () => {
-      const trusted = systemPreferences.isTrustedAccessibilityClient(false);
+    ipcMain.handle("check-accessibility-trusted", async () => {
+      const trusted = await clipboardManager.checkAccessibilityPermissions(true);
       if (!trusted) {
-        checkAndNotifyAccessibility();
+        await checkAndNotifyAccessibility();
       }
       return trusted;
     });
@@ -1304,7 +1303,7 @@ async function startApp() {
       } else if (hotkeyManager.slotHasHotkey("translation", key)) {
         windowManager.sendToggleTranslation();
       } else if (hotkeyManager.slotHasHotkey("meeting", key)) {
-        windowManager.startManualMeeting({ activate: false });
+        windowManager.startManualMeeting({ activate: false, startSource: "hotkey" });
       }
     };
 
@@ -1528,6 +1527,7 @@ if (gotSingleInstanceLock) {
 }
 
 function performSyncTeardown() {
+  whisperManager?.cancelWakeGpuRetry();
   ipcHandlers?._noteFilesSync?.flushSync();
   disposeRegistryIpc?.();
   disposeRegistryIpc = null;

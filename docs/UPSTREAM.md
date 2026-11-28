@@ -6,7 +6,7 @@ The repository retains OpenWhispr's history but is an independent regular GitHub
 
 A clean migration retains both histories, updates `upstream.json`, pushes `upstream/vX.Y.Z` and opens a draft pull request. A separate read-only job installs and tests the exact pushed commit without publication credentials. Passing checks make the PR ready for review while it still points to that commit. There is no automatic merge.
 
-Conflicts abort the merge, retain the current implementation and commit a report naming the affected files under `.github/upstream-conflicts/`. The PR remains a draft. Resolve the migration manually, preserve downstream behavior and remove the blocking report before preparing a release. If a run pushed the branch but could not open a pull request, the next run opens a draft for manual review. The monitor preserves existing branches and prior pull requests.
+Conflicts abort the merge, retain the current implementation and commit a report naming the affected files under `.github/upstream-conflicts/`. The PR remains a draft and Actions marks the migration as blocked. Resolve the migration manually, preserve downstream behavior and remove the blocking report before preparing a release. If a run pushed the branch but could not open a pull request, the next run opens a draft for manual review. The monitor preserves existing branches and prior pull requests.
 
 The manual release workflow builds Linux x86_64 `.deb`, AppImage and `.tar.gz` artifacts with SHA256SUMS. Run it on a migration branch to check packaging and the SQLite CPU baseline using a read-only runner. The main branch also uses a separate job to create a draft release from the completed artifacts after the conflict report has been removed. A person reviews and publishes the draft.
 

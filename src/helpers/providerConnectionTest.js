@@ -1,3 +1,5 @@
+const { selfHostedSttRequest } = require("./selfHostedSttHeaders.js");
+const { isRefusedRedirect } = require("./providerHttpErrors.js");
 const ENDPOINTS = {
   openai: "https://api.openai.com/v1/models",
   groq: "https://api.groq.com/openai/v1/models",
@@ -171,13 +173,9 @@ function resolveProviderRequest(config) {
   const scope = String(config?.scope || "").toLowerCase();
   const apiKey = typeof config?.apiKey === "string" ? config.apiKey.trim() : "";
   let endpoints = ENDPOINTS[provider] ? [ENDPOINTS[provider]] : [];
-  // A hosted provider's fixed endpoint never redirects. Following one would carry
-  // x-api-key or x-goog-api-key to whichever host it names (fetch drops only
-  // Authorization across origins), so a redirect fails the check instead. Custom
-  // servers may redirect within themselves, such as adding a trailing slash.
+  // A connection probe for a self-hosted endpoint must stay on its configured origin.
   let redirect = "error";
   let transcriptionEndpoint;
-  let checksOpenRouterKey = false;
 
   if (provider === "openai") {
     const override = normalizeBaseUrl(
@@ -211,22 +209,6 @@ function resolveProviderRequest(config) {
     }
     endpoints = buildModelEndpoints(parsed.toString());
     transcriptionEndpoint = buildTranscriptionEndpoint(parsed.toString());
-    redirect = "follow";
-    // OpenRouter lists speech-to-text models only when asked for that output
-    // modality, so its default catalog reads every STT id as missing (#1764).
-    // The catalog answers any caller, so the key is checked on its own first.
-    const host = parsed.hostname;
-    if (
-      scope === "transcription" &&
-      (host === "openrouter.ai" || host.endsWith(".openrouter.ai"))
-    ) {
-      checksOpenRouterKey = true;
-      endpoints = endpoints.map((endpoint) => {
-        const url = new URL(endpoint);
-        url.searchParams.set("output_modalities", "transcription");
-        return url.toString();
-      });
-    }
   }
 
   if (endpoints.length === 0) {
@@ -258,10 +240,12 @@ function resolveProviderRequest(config) {
   return {
     endpoint: endpoints[0],
     endpoints,
-    headers,
-    redirect,
+    // A speech server's address is the user's to correct, so its refused redirect is named;
+    // a hosted provider's stays no verdict.
+    ...(provider === "custom" && scope === "transcription"
+      ? { ...selfHostedSttRequest(config.headers, headers), redirect: "error", namesRedirect: true }
+      : { headers, redirect }),
     transcriptionEndpoint,
-    checksOpenRouterKey,
   };
 }
 
@@ -270,9 +254,10 @@ function resolveProviderRequest(config) {
 // key or a missing model. No answer outranks a candidate without a model list, which may only
 // be an address the server doesn't use.
 const FAILURE_PRIORITY = {
-  credentialsRejected: 6,
-  providerStatus: 5,
-  modelNotFound: 4,
+  credentialsRejected: 7,
+  providerStatus: 6,
+  modelNotFound: 5,
+  redirected: 4,
   endpointNotFound: 0,
 };
 const UNVERIFIED_PRIORITY = { providerStatus: 3, timeout: 2, network: 1 };
@@ -327,6 +312,11 @@ const NETWORK_FAILURE = {
   error: "The provider could not be reached.",
   unverified: true,
 };
+// A speech server that redirects a request carrying custom headers is set up wrong.
+const REDIRECT_FAILURE = {
+  errorCode: "redirected",
+  error: "The server redirected the request to another address.",
+};
 
 // An empty or non-JSON body reads as undefined. A body that never arrives (the 12 s cap
 // firing, a dropped connection) is not an answer, so its error goes on to probe's catch.
@@ -339,8 +329,8 @@ async function readJson(response) {
   }
 }
 
-// Gemini, xAI and Corti answer a made-up key with a 400, which on its own can also
-// mean a malformed request. Their error bodies say which it was.
+// Gemini, xAI and Corti answer a made-up key with a 400, which on its own
+// can also mean a malformed request. Their error bodies say which it was.
 const KEY_REJECTED_BY_BODY = {
   gemini: (_, body) =>
     Array.isArray(body?.error?.details) &&
@@ -415,7 +405,8 @@ async function probe(endpoint, request, fetchImpl, judge, init = { method: "GET"
     });
     return await judge(response);
   } catch (error) {
-    return error?.name === "AbortError" ? TIMEOUT_FAILURE : NETWORK_FAILURE;
+    if (error?.name === "AbortError") return TIMEOUT_FAILURE;
+    return request.namesRedirect && isRefusedRedirect(error) ? REDIRECT_FAILURE : NETWORK_FAILURE;
   } finally {
     clearTimeout(timeout);
   }
@@ -428,6 +419,13 @@ async function testProviderConnection(
   fetchImpl = fetch,
   runPaidCheck = (_key, check) => check()
 ) {
+  if (String(config?.provider || "").toLowerCase() !== "custom") {
+    return {
+      success: false,
+      errorCode: "unsupportedProvider",
+      error: "Only self-hosted endpoints can be tested in WhisprLocal.",
+    };
+  }
   let request;
   try {
     request = resolveProviderRequest(config);
@@ -437,14 +435,6 @@ async function testProviderConnection(
       errorCode: error.errorCode || "invalidUrl",
       error: error.message,
     };
-  }
-
-  if (request.checksOpenRouterKey) {
-    const keyCheck = await testProviderConnection(
-      { provider: "openrouter", scope: "transcription", apiKey: config.apiKey },
-      fetchImpl
-    );
-    if (!keyCheck.success) return keyCheck;
   }
 
   const provider = String(config?.provider || "").toLowerCase();
@@ -533,9 +523,6 @@ async function testDeepgramKey(request, fetchImpl) {
   return fallback ? { success: false, ...fallback } : { success: true };
 }
 
-// Runs once Tinfoil's public model list has vouched for the model. A valid key pays for one
-// embedded token, hence runPaidCheck. A 404 means this check's own model was retired, which
-// says nothing about the key.
 function testTinfoilKey(request, apiKey, fetchImpl, runPaidCheck) {
   const jsonRequest = {
     ...request,

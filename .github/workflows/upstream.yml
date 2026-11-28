@@ -98,6 +98,15 @@ jobs:
           fi
           url=$(gh pr create --repo "$GH_REPO" --base main --head "$branch" --draft --title "Review OpenWhispr $TAG migration" --body-file "$RUNNER_TEMP/pr-body.md")
           echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
+      - name: Report a blocked migration
+        if: steps.merge.outputs.conflicted == 'true'
+        env:
+          TAG: ${{ needs.discover.outputs.tag }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          printf '## OpenWhispr %s migration blocked\n\nConflicting files are listed in draft PR #%s. Resolve the migration and run the local edition checks.\n' "$TAG" "$PR" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::OpenWhispr $TAG could not be integrated. See draft PR #$PR for the conflict report."
+          exit 1
   test-import:
     needs: prepare
     if: needs.prepare.outputs.sha != '' && needs.prepare.outputs.pr != '' && needs.prepare.outputs.conflicted == 'false'

@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/OpenWhispr/openwhispr",
-  "version": "1.12.0",
-  "tag": "v1.12.0",
-  "commit": "ad7424068824ceae479aa8882140ed1f7a15b5a1"
+  "version": "1.12.1",
+  "tag": "v1.12.1",
+  "commit": "51e8af4fa77221011b6c984e3fe344536bd74d1c"
 }

@@ -147,7 +147,6 @@ import {
   useSettingsStore,
   type HotkeyRegistrationResult,
 } from "../stores/settingsStore";
-import { useWorkspaceStore } from "../stores/workspaceStore";
 import { decideProPlanCardCta, storeSubscriptionsUrl } from "../lib/upsell";
 import {
   canChangeCloudBackupPreference,
@@ -168,16 +167,6 @@ import WorkspacePeopleSection from "./settings/WorkspacePeopleSection";
 import WorkspaceTeamspacesSection from "./settings/WorkspaceTeamspacesSection";
 import WorkspaceDeveloperSection from "./settings/WorkspaceDeveloperSection";
 import type { SettingsSectionType } from "../lib/settingsNav";
-import {
-  businessDowngradeAction,
-  enterpriseManageAction,
-  enterpriseTileCta,
-  entitledWorkspacePlans,
-  type EnterpriseTileCta,
-} from "../lib/workspaceBilling";
-import { WorkspacePlanActionButton } from "./settings/WorkspacePlanActionButton";
-import WorkspaceBillingOverview from "./settings/WorkspaceBillingOverview";
-import EnterpriseCheckoutDialog from "./settings/EnterpriseCheckoutDialog";
 import CreateWorkspaceDialog from "./CreateWorkspaceDialog";
 import ProfileSection from "./settings/ProfileSection";
 import ToneStyleSection from "./settings/ToneStyleSection";
@@ -543,6 +532,8 @@ function TranscriptionSection({
   toast,
 }: TranscriptionSectionProps) {
   const { t } = useTranslation();
+  const selfHostedHeaders = useSettingsStore((s) => s.selfHostedSttHeaders.dictation);
+  const setSelfHostedSttHeaders = useSettingsStore((s) => s.setSelfHostedSttHeaders);
   const policySnapshot = usePolicySnapshot();
   const enterpriseTranscriptionSetupMode = useSettingsStore(
     (s) => s.enterpriseTranscriptionSetupMode
@@ -809,6 +800,8 @@ function TranscriptionSection({
               onUrlChange={setRemoteTranscriptionUrl}
               model={remoteTranscriptionModel}
               onModelChange={setRemoteTranscriptionModel}
+              headers={selfHostedHeaders}
+              onHeadersChange={(rows) => setSelfHostedSttHeaders("dictation", rows)}
             />
           )}
         </>
@@ -882,7 +875,11 @@ function AiModelsSection({ useCleanupModel, setUseCleanupModel, toast }: AiModel
             label={t("settingsPage.aiModels.enableTextCleanup")}
             description={t("settingsPage.aiModels.enableTextCleanupDescription")}
           >
-            <Toggle checked={useCleanupModel} onChange={setUseCleanupModel} />
+            <Toggle
+              ariaLabel={t("settingsPage.aiModels.enableTextCleanup")}
+              checked={useCleanupModel}
+              onChange={setUseCleanupModel}
+            />
           </SettingsRow>
         </SettingsPanelRow>
       </SettingsPanel>
@@ -1434,27 +1431,6 @@ export default function SettingsPage({
 
   const { theme, setTheme } = useTheme();
   const usage = useUsage();
-  const billingWorkspaces = useWorkspaceStore((s) => s.workspaces);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const billingWorkspacesLoaded = useWorkspaceStore((s) => s.loaded);
-  const [enterpriseCheckoutOpen, setEnterpriseCheckoutOpen] = useState(false);
-  const [enterpriseWorkspaceCreateOpen, setEnterpriseWorkspaceCreateOpen] = useState(false);
-  // Until the store resolves, an empty list would make enterpriseTileCta answer
-  // "createWorkspace" for everyone — including members who must never be routed
-  // into creating a workspace. Fall back to contact sales for that window.
-  const enterpriseCta: EnterpriseTileCta = billingWorkspacesLoaded
-    ? enterpriseTileCta(billingWorkspaces, activeWorkspaceId)
-    : { action: "contactSales", ownerName: null };
-  // The grid's Pro badge is the personal plan; these mark what workspaces provide.
-  const workspacePlans = billingWorkspacesLoaded
-    ? entitledWorkspacePlans(billingWorkspaces)
-    : new Set<string>();
-  const enterpriseAction = billingWorkspacesLoaded
-    ? enterpriseManageAction(billingWorkspaces, activeWorkspaceId)
-    : null;
-  const businessAction = billingWorkspacesLoaded
-    ? businessDowngradeAction(billingWorkspaces, activeWorkspaceId)
-    : null;
   const { accountPlan, isWorkspaceCovered, coveringWorkspaceNames, coveringPlanLabel, planLabel } =
     useAccountPlan(usage);
   const hasShownApproachingToast = useRef(false);

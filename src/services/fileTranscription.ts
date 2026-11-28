@@ -126,8 +126,15 @@ export async function transcribeFile(
   filePath: string,
   cfg: FileTranscriptionConfig,
   diarize: boolean,
-  opts: { requestId?: string; timestamps?: boolean; purpose?: "dictation" | "upload" } = {}
+  opts: {
+    requestId?: string;
+    signal?: AbortSignal;
+    timestamps?: boolean;
+    purpose?: "dictation" | "upload";
+    durationSeconds?: number;
+  } = {}
 ): Promise<FileTranscriptionResult> {
+  opts.signal?.throwIfAborted();
   const route = resolveFileTranscriptionRoute(cfg);
   if (route.transport === "local") {
     const provider = cfg.localTranscriptionProvider as LocalTranscriptionProvider;
@@ -250,8 +257,9 @@ export async function transcribeFileWithSpeakers(
   cfg: FileTranscriptionConfig,
   diarization: DiarizationSettings,
   durationSeconds?: number | null,
-  opts: { requestId?: string; timestamps?: boolean } = {}
+  opts: { requestId?: string; timestamps?: boolean; isCancelled?: () => boolean } = {}
 ): Promise<FileTranscriptionResult> {
+  if (opts.isCancelled?.()) return { success: false, code: "AUDIO_OPERATION_CANCELLED" };
   const byokDiarize = shouldUseByokDiarize(cfg, diarization.enabled);
   const diarizePromise =
     diarization.enabled && diarization.localModelsReady && !byokDiarize
@@ -267,6 +275,7 @@ export async function transcribeFileWithSpeakers(
     transcribeFile(filePath, cfg, byokDiarize, opts),
     diarizePromise,
   ]);
+  if (opts.isCancelled?.()) return { success: false, code: "AUDIO_OPERATION_CANCELLED" };
 
   // The diarizer measures the converted audio, so it covers picked files whose
   // duration the caller never knew. 0/NaN mean "unknown", hence ||.

@@ -154,8 +154,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     (callback) => (_event, payload) => callback(payload)
   ),
   micWarmHoldChanged: (active) => ipcRenderer.send("mic-warm-hold-changed", active),
-  dictationLifecycleStateChanged: (state, attempt) =>
-    ipcRenderer.invoke("dictation-lifecycle-state-changed", state, attempt),
+  dictationLifecycleStateChanged: (state, attempt, voiceAgentRequested = false) =>
+    ipcRenderer.invoke("dictation-lifecycle-state-changed", state, attempt, voiceAgentRequested),
 
   // Database functions
   saveTranscription: (text, rawText, options) =>
@@ -238,6 +238,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   skillsApplyUpdate: (update) => ipcRenderer.invoke("skills-apply-update", update),
   skillsMarkUsed: (name) => ipcRenderer.invoke("skills-mark-used", name),
   skillsUndo: (name, versionId) => ipcRenderer.invoke("skills-undo", name, versionId),
+  broadcastSkillsUpdated: () => ipcRenderer.invoke("skills-broadcast-updated"),
   onSkillsChanged: (callback) => {
     const listener = () => callback?.();
     ipcRenderer.on("skills-changed", listener);
@@ -286,7 +287,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   discardNoteUndo: (id, token) => ipcRenderer.invoke("db-discard-note-undo", id, token),
   deleteNote: (id) => ipcRenderer.invoke("db-delete-note", id),
   exportNote: (noteId, format) => ipcRenderer.invoke("export-note", noteId, format),
-  exportTranscript: (noteId, format) => ipcRenderer.invoke("export-transcript", noteId, format),
+  exportTranscript: (noteId, format, options) =>
+    ipcRenderer.invoke("export-transcript", noteId, format, options),
   exportDictionary: (words) => ipcRenderer.invoke("export-dictionary", words),
   searchNotes: (query, limit, spaceId, folderId, spaceIds) =>
     ipcRenderer.invoke("db-search-notes", query, limit, spaceId, folderId, spaceIds),
@@ -302,11 +304,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getStandInOwnershipCandidates: () => ipcRenderer.invoke("db-get-stand-in-ownership-candidates"),
   resolveStandInOwnership: (request) =>
     ipcRenderer.invoke("db-resolve-stand-in-ownership", request),
-  createFolder: (name, spaceId, writeGuard) =>
-    ipcRenderer.invoke("db-create-folder", name, spaceId, writeGuard),
+  createFolder: (name, spaceId, writeGuard, parentFolderId) =>
+    ipcRenderer.invoke("db-create-folder", name, spaceId, writeGuard, parentFolderId),
   deleteFolder: (id) => ipcRenderer.invoke("db-delete-folder", id),
   renameFolder: (id, name) => ipcRenderer.invoke("db-rename-folder", id, name),
   moveFolderToSpace: (id, spaceId) => ipcRenderer.invoke("db-move-folder-to-space", id, spaceId),
+  setFolderParent: (id, parentFolderId, writeGuard) =>
+    ipcRenderer.invoke("db-set-folder-parent", id, parentFolderId, writeGuard),
   getFolderNoteCounts: () => ipcRenderer.invoke("db-get-folder-note-counts"),
 
   // Space functions
@@ -706,12 +710,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveUiLanguage: (language) => ipcRenderer.invoke("save-ui-language", language),
   setUiLanguage: (language) => ipcRenderer.invoke("set-ui-language", language),
 
-  // xAI / Mistral transcription proxies (keys handled by the manifest bridge)
+  // xAI / AssemblyAI / Mistral transcription proxies (keys handled by the manifest bridge)
   proxyXaiTranscription: (data) => ipcRenderer.invoke("proxy-xai-transcription", data),
   proxyMistralTranscription: (data) => ipcRenderer.invoke("proxy-mistral-transcription", data),
   proxyTinfoilTranscription: (data) => ipcRenderer.invoke("proxy-tinfoil-transcription", data),
 
   // Custom endpoint API keys
+  getSelfHostedSttHeaders: () => ipcRenderer.invoke("get-self-hosted-stt-headers"),
+  saveSelfHostedSttHeaders: (value) => ipcRenderer.invoke("save-self-hosted-stt-headers", value),
   getCustomTranscriptionKey: () => ipcRenderer.invoke("get-custom-transcription-key"),
   saveCustomTranscriptionKey: (key) => ipcRenderer.invoke("save-custom-transcription-key", key),
   getCleanupCustomKey: () => ipcRenderer.invoke("get-cleanup-custom-key"),
@@ -810,7 +816,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener("workspace-policy-changed", listener);
   },
   getSttConfig: () => ipcRenderer.invoke("get-stt-config"),
-  getEffectivePolicy: () => ipcRenderer.invoke("get-effective-policy"),
+  getEffectivePolicy: (options) => ipcRenderer.invoke("get-effective-policy", options),
   onEffectivePolicyChanged: registerListener(
     "effective-policy-changed",
     (callback) => (_event, snapshot) => callback(snapshot)
@@ -893,12 +899,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   meetingTranscriptionStart: (options) =>
     ipcRenderer.invoke("meeting-transcription-start", options),
   isMeetingRecordingDisabled: () => ipcRenderer.invoke("is-meeting-recording-disabled"),
+  meetingRecordingRefused: (details) => ipcRenderer.invoke("meeting-recording-refused", details),
   meetingTranscriptionSend: (buffer, source, capturedAt) =>
     ipcRenderer.send("meeting-transcription-send", buffer, source, capturedAt),
   meetingTranscriptionSetSystemAudioAvailable: (sessionId, available) =>
     ipcRenderer.invoke("meeting-transcription-set-system-audio-available", sessionId, available),
-  meetingTranscriptionStop: (expectedSessionId) =>
-    ipcRenderer.invoke("meeting-transcription-stop", expectedSessionId),
+  meetingTranscriptionSetMicMuted: (sessionId, muted) =>
+    ipcRenderer.invoke("meeting-transcription-set-mic-muted", sessionId, muted),
+  meetingTranscriptionStop: (expectedSessionId, reason) =>
+    ipcRenderer.invoke("meeting-transcription-stop", expectedSessionId, reason),
   meetingTranscriptionCancel: () => ipcRenderer.invoke("meeting-transcription-cancel"),
   onMeetingTranscriptionSegment: registerListener(
     "meeting-transcription-segment",
@@ -1188,10 +1197,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   countNotesMissingRevision: (spaceKind) =>
     ipcRenderer.invoke("db-count-notes-missing-revision", spaceKind),
   markNoteSyncError: (id) => ipcRenderer.invoke("db-mark-note-sync-error", id),
+  keepDeletedNoteTranscript: (id, transcript, writeGuard) =>
+    ipcRenderer.invoke("db-keep-deleted-note-transcript", id, transcript, writeGuard),
   restoreNoteAfterDeniedDelete: (id) =>
     ipcRenderer.invoke("db-restore-note-after-denied-delete", id),
-  hardDeleteNote: (id, authGeneration) =>
-    ipcRenderer.invoke("db-hard-delete-note", id, authGeneration),
+  hardDeleteNote: (id, authGeneration, options) =>
+    ipcRenderer.invoke("db-hard-delete-note", id, authGeneration, options),
 
   getPendingFolders: (spaceKind) => ipcRenderer.invoke("db-get-pending-folders", spaceKind),
   getFolderByClientId: (clientFolderId) =>
@@ -1223,12 +1234,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
       expectedCloudId,
       authGeneration
     ),
+  ensureAccountDefaultFolders: (foreignCloudIds, expectedScope) =>
+    ipcRenderer.invoke("db-ensure-account-default-folders", foreignCloudIds, expectedScope),
   getFolderIdMap: () => ipcRenderer.invoke("db-get-folder-id-map"),
+  applyCloudFolderParents: (links, authGeneration) =>
+    ipcRenderer.invoke("db-apply-cloud-folder-parents", links, authGeneration),
   getPendingFolderDeletes: () => ipcRenderer.invoke("db-get-pending-folder-deletes"),
   restoreFolderAfterDeniedDelete: (id) =>
     ipcRenderer.invoke("db-restore-folder-after-denied-delete", id),
-  hardDeleteFolder: (id, authGeneration) =>
-    ipcRenderer.invoke("db-hard-delete-folder", id, authGeneration),
+  hardDeleteFolder: (id, authGeneration, options) =>
+    ipcRenderer.invoke("db-hard-delete-folder", id, authGeneration, options),
   relocateRevokedFolder: (id, privateSpaceId, preserveFolder) =>
     ipcRenderer.invoke("db-relocate-revoked-folder", id, privateSpaceId, preserveFolder),
   forkFolderIdentity: (id) => ipcRenderer.invoke("db-fork-folder-identity", id),
@@ -1331,7 +1346,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("connector-recent-actions", connectorId, limit),
   connectorFindContacts: (query) => ipcRenderer.invoke("connector-find-contacts", query),
   connectorNoteAttendees: (request) => ipcRenderer.invoke("connector-note-attendees", request),
-  connectorConnect: (connectorId) => ipcRenderer.invoke("connector-connect", connectorId),
+  connectorConnect: (connectorId, options) =>
+    ipcRenderer.invoke("connector-connect", connectorId, options),
   connectorCancelConnect: (connectorId) =>
     ipcRenderer.invoke("connector-cancel-connect", connectorId),
   connectorDisconnect: (connectorId) => ipcRenderer.invoke("connector-disconnect", connectorId),

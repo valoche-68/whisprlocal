@@ -39,3 +39,26 @@ test("a self-hosted file upload hands its cancel id to the main process", async 
   assert.equal(received.transcriptionMode, "self-hosted");
   assert.equal(received.timestamps, true);
 });
+
+test("an abandoned local voice take skips the transcription IPC", async (t) => {
+  const { window } = installBrowserGlobals(t);
+  window.electronAPI.transcribeAudioFile = async () => {
+    assert.fail("cancelled voice take must not reach IPC");
+  };
+  const vite = await createRendererServer(t, {
+    cachePrefix: "whisprlocal-file-local-cancel-test-",
+  });
+  const { transcribeFile } = await vite.ssrLoadModule("/services/fileTranscription.ts");
+  await assert.rejects(
+    transcribeFile("/tmp/take.webm", {
+      useLocalWhisper: true,
+      localTranscriptionProvider: "whisper",
+      whisperModel: "base",
+      transcriptionMode: "local",
+    }, false, {
+      requestId: "voice-take",
+      signal: AbortSignal.abort(),
+    }),
+    { name: "AbortError" }
+  );
+});

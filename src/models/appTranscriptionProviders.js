@@ -86,3 +86,31 @@ export function withAppTranscriptionProviders(catalog) {
 export function isUploadOnlyTranscriptionModel(providerId, modelId) {
   return UPLOAD_ONLY_MODELS.get(providerId)?.includes(modelId) ?? false;
 }
+
+// ElevenLabs realtime models stream only in Note Recording and have no batch endpoint:
+// dictation, onboarding and Audio Upload never offer them, and a batch request for one
+// takes the provider default. The catalog has no field for this, so the rule goes by the
+// id, which also holds for a model a publication lists.
+export function isNoteRecordingOnlyTranscriptionModel(providerId, modelId) {
+  return providerId === "elevenlabs" && /_(realtime|live)$/.test(modelId);
+}
+
+/**
+ * The models of one provider that a context lists. Shared by the pickers' lists and the
+ * settings store so neither keeps a model the other hides.
+ *
+ * @template {{ id: string, streaming?: boolean }} Model
+ * @param {string} providerId
+ * @param {readonly Model[]} models
+ * @param {import("../stores/policyRules").TranscriptionPolicyContext} context
+ * @returns {Model[]}
+ */
+export function transcriptionModelsForContext(providerId, models, context) {
+  if (context === "meeting") return models.filter((model) => model.streaming);
+  const batchModels = models.filter(
+    (model) => !isNoteRecordingOnlyTranscriptionModel(providerId, model.id)
+  );
+  if (context === "dictation")
+    return batchModels.filter((model) => !isUploadOnlyTranscriptionModel(providerId, model.id));
+  return batchModels;
+}

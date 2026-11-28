@@ -58,6 +58,7 @@ Module._load = function loadWithMocks(request, parent, isMain) {
   if (request === "electron") return electronStub;
   if (
     parent?.filename === handlersModulePath &&
+    request !== "./transcriptFormatter" &&
     (request.startsWith("./") || request.startsWith("../"))
   ) {
     return anything();
@@ -117,6 +118,28 @@ test("Markdown transcript export limits the save dialog to Markdown files", asyn
   });
   assert.deepEqual(result, { success: false });
 });
+
+for (const [description, options, speaker] of [
+  ["a padded label", { recorderLabel: "  Ada Lovelace  " }, "Ada Lovelace"],
+  ["a blank label", { recorderLabel: "   " }, "You"],
+  ["a non-string label", { recorderLabel: 42 }, "You"],
+  ["no label", undefined, "You"],
+]) {
+  test(`transcript export with ${description} names the recorder ${speaker}`, async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "openwhispr-transcript-export-"));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const filePath = path.join(directory, "transcript.txt");
+    note.transcript = JSON.stringify([
+      { source: "mic", speaker: "you", timestamp: 0, text: "Morning." },
+    ]);
+    saveDialogResult = { canceled: false, filePath };
+
+    const result = await handlers.get("export-transcript")({}, 1, "txt", options);
+
+    assert.deepEqual(result, { success: true });
+    assert.ok(fs.readFileSync(filePath, "utf8").includes(`[00:00:00] ${speaker}:\nMorning.`));
+  });
+}
 
 for (const [format, name] of [
   ["md", "Markdown"],
@@ -191,6 +214,27 @@ test("Markdown note export retains the existing enhanced-content preference", as
   assert.equal(await exportNoteToFile(t, "Original notes", "md"), note.enhanced_content);
   note.enhanced_content = null;
   assert.equal(await exportNoteToFile(t, "**Original notes**", "md"), "**Original notes**");
+});
+
+test("Text note export writes the AI summary when the note has no typed notes", async (t) => {
+  note.enhanced_content =
+    "## Summary\n\n**Ready** to ship.\n\n## Action Items\n\n- [ ] Send the proposal — [@Sam Lee](mention:sam%40acme.com)";
+  for (const content of ["", null, undefined, "  \n"]) {
+    assert.equal(
+      await exportNoteToFile(t, content),
+      "Summary\n\nReady to ship.\n\nAction Items\n\n- [ ] Send the proposal — @Sam Lee"
+    );
+  }
+});
+
+test("Text note export keeps typed notes when the note also has an AI summary", async (t) => {
+  note.enhanced_content = "## Summary\n\n**Ready** to ship.";
+  assert.equal(await exportNoteToFile(t, "**Original notes**"), "Original notes");
+});
+
+test("Text note export stays empty when the note has neither notes nor summary", async (t) => {
+  note.enhanced_content = null;
+  assert.equal(await exportNoteToFile(t, ""), "");
 });
 
 test("a repeated Text note export writes the latest content to the selected file", async (t) => {

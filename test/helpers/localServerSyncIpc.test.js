@@ -154,6 +154,37 @@ function sync({ loaded, signedIn = false, policySettled = true, ...scopes }) {
   );
 }
 
+test("only a dictation speech engine change stops servers shared with local meetings", async (t) => {
+  const stopped = [];
+  const previousWhisperManager = target.whisperManager;
+  const previousParakeetManager = target.parakeetManager;
+  target.whisperManager = {
+    ...previousWhisperManager,
+    stopServer: async () => stopped.push("whisper"),
+  };
+  target.parakeetManager = { stopServer: async () => stopped.push("parakeet") };
+  t.after(() => {
+    target.whisperManager = previousWhisperManager;
+    if (previousParakeetManager === undefined) delete target.parakeetManager;
+    else target.parakeetManager = previousParakeetManager;
+  });
+
+  await sync({ cleanupMode: "local", cleanupModel: MODEL });
+  assert.deepEqual(stopped.splice(0), ["whisper", "parakeet"], "apply the initial cloud route");
+  await sync({ cleanupMode: "enterprise", cleanupModel: "managed-model" });
+  assert.deepEqual(stopped, [], "a managed cleanup update must leave the meeting decode alone");
+
+  const local = { useLocalWhisper: true, localTranscriptionProvider: "nvidia", model: "parakeet" };
+  await sync(local);
+  assert.deepEqual(stopped.splice(0), ["whisper"]);
+  await sync({ ...local, language: "de" });
+  assert.deepEqual(stopped, [], "the same engine can be reported by another window");
+  await sync({ ...local, localTranscriptionProvider: "whisper", model: "tiny" });
+  assert.deepEqual(stopped.splice(0), ["parakeet"]);
+  await sync({});
+  assert.deepEqual(stopped, ["whisper", "parakeet"], "an actual cloud switch still retires both");
+});
+
 test("a window sync keeps the server while another scope still needs its model", async () => {
   const cancelled = modelManager.serverManager.cancelledStops;
   await sync({ loaded: MODEL, chatAgentMode: "local", chatAgentModel: MODEL });
@@ -249,7 +280,13 @@ test("retry sends audio only to a configured self-hosted server with the stored 
     updateTranscriptionStatus() {},
     updateTranscriptionAudio() {},
   };
-  target.environmentManager = { getCustomTranscriptionKey: () => "saved-token" };
+  target.environmentManager = {
+    getCustomTranscriptionKey: () => "saved-token",
+    getSelfHostedSttHeaders: () => JSON.stringify({
+      dictation: [{ name: "X-Dictation-Key", value: "dictation-secret" }],
+      upload: [{ name: "X-Upload-Key", value: "upload-secret" }],
+    }),
+  };
   target.audioStorageManager = { getAudioBuffer: () => Buffer.from("test audio") };
   t.after(() => {
     setConfigured([]);
@@ -280,7 +317,9 @@ test("retry sends audio only to a configured self-hosted server with the stored 
   assert.equal(fetch.mock.callCount(), 1);
   const [url, options] = fetch.mock.calls[0].arguments;
   assert.equal(url, endpoint + "/audio/transcriptions");
-  assert.equal(options.headers.Authorization, "Bearer saved-token");
+  assert.equal(options.headers.authorization, "Bearer saved-token");
+  assert.equal(options.headers["x-dictation-key"], "dictation-secret");
+  assert.equal(options.headers["x-upload-key"], undefined);
   assert.equal(options.redirect, "error");
   assert.equal(options.body.get("model"), "whisper");
   assert.equal(await options.body.get("file").text(), "test audio");
@@ -291,7 +330,13 @@ test("file import ignores stale provider settings and sends audio only to the co
   const audioPath = path.join(userDataDirectory, "audio.wav");
   fs.writeFileSync(audioPath, "test upload");
   target._uploadCancelRegistry = createUploadCancelRegistry();
-  target.environmentManager = { getCustomTranscriptionKey: () => "saved-token" };
+  target.environmentManager = {
+    getCustomTranscriptionKey: () => "saved-token",
+    getSelfHostedSttHeaders: () => JSON.stringify({
+      dictation: [{ name: "X-Dictation-Key", value: "dictation-secret" }],
+      upload: [{ name: "X-Upload-Key", value: "upload-secret" }],
+    }),
+  };
   t.after(() => {
     setConfigured([]);
     delete target._uploadCancelRegistry;
@@ -321,7 +366,20 @@ test("file import ignores stale provider settings and sends audio only to the co
   assert.equal(fetch.mock.callCount(), 1);
   const [url, request] = fetch.mock.calls[0].arguments;
   assert.equal(url, endpoint + "/audio/transcriptions");
-  assert.equal(request.headers.Authorization, "Bearer saved-token");
+  assert.equal(request.headers.authorization, "Bearer saved-token");
+  assert.equal(request.headers["x-upload-key"], "upload-secret");
+  assert.equal(request.headers["x-dictation-key"], undefined);
   assert.equal(request.body.get("file").type, "audio/wav");
   assert.equal(await request.body.get("file").text(), "test upload");
+});
+
+test("a settled cleanup route configures recording prewarm and a managed route clears it", async (t) => {
+  const previous = target.dictationCleanupPrewarm;
+  const models = [];
+  target.dictationCleanupPrewarm = { setModel: (modelId) => models.push(modelId) };
+  t.after(() => { target.dictationCleanupPrewarm = previous; });
+  await sync({ signedIn: true, policySettled: false, cleanupMode: "local", cleanupModel: MODEL });
+  await sync({ signedIn: true, cleanupMode: "local", cleanupModel: MODEL });
+  await sync({ signedIn: true, cleanupMode: "enterprise", cleanupModel: "managed-model" });
+  assert.deepEqual(models, [MODEL, ""]);
 });

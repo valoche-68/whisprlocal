@@ -5,6 +5,19 @@ import {
   useEnterpriseIdentityStore,
 } from "../stores/enterpriseIdentityStore";
 
+export function canUseAssemblyAiRewrite(): boolean {
+  return false;
+}
+
+// Admission mirrors main: an optional managed cleanup can still process the verbatim transcript.
+export function allowsPersonalDictationCleanup(): boolean {
+  return getManagedScopeResolution("dictationCleanup", "manual").kind === "manual";
+}
+
+export function isByokTranscriptionModelAllowed(_provider: string, _model?: string): boolean {
+  return false;
+}
+
 /**
  * True when managed STT resolves for this user. Dictation gates OR this with
  * the personal-selection policy check: a policy that only allows the

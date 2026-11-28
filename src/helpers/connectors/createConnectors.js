@@ -1,18 +1,5 @@
-// Every connector the app ships, built from one set of dependencies, so a new
-// connector adds its module and one line here, and main.js doesn't change.
-const { buildEmailConnector } = require("./emailConnector");
-const { buildSlackConnector } = require("./slackConnector");
-const { buildGmailConnector } = require("./gmailConnector");
-const { buildLinearConnector } = require("./linearConnector");
-const { buildGithubConnector } = require("./githubConnector");
-
-const CONNECTOR_FACTORIES = [
-  buildEmailConnector,
-  buildSlackConnector,
-  buildGmailConnector,
-  buildLinearConnector,
-  buildGithubConnector,
-];
+// WhisprLocal has no third-party connector factories.
+const CONNECTOR_FACTORIES = [];
 
 // Two connectors with one id would share login slots and receipts: a build
 // fault, thrown at startup like the manager's editable-type check.

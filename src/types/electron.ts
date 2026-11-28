@@ -40,6 +40,9 @@ import type {
   NoteAttendeesRequest,
 } from "./connectors";
 import type {
+  CloudSkillEntry,
+  CloudSkillMeta,
+  SkillCloudExport,
   SkillCommitResult,
   SkillCreateInput,
   SkillDetail,
@@ -50,6 +53,8 @@ import type {
   SkillRef,
   SkillSaveResult,
   SkillSummary,
+  SkillSyncRow,
+  SkillSyncUnavailable,
   SkillUpdate,
   SkillUploadItem,
   SkillUploadPreview,
@@ -144,6 +149,7 @@ export interface DictationRealtimeSessionOptions {
   baseUrl?: string;
   model?: string;
   mode?: "byok" | "openwhispr";
+  transcriptionMode?: string;
   language?: string;
   sampleRate?: number;
   keyterms?: string[];
@@ -284,8 +290,9 @@ export interface IpcErrorFields {
  * Proxied-transcription IPC results. `ipcMain.handle` drops custom error props on
  * rejection, so these handlers resolve with a serialized error instead of throwing.
  */
-export type ProxyTranscriptionResult =
-  { text: string; model?: string; error?: undefined } | (IpcErrorFields & { text?: undefined });
+export type ProxyTranscriptionResult<SuccessFields = unknown> =
+  | ({ text: string; model?: string; error?: undefined } & SuccessFields)
+  | (IpcErrorFields & { text?: undefined });
 
 export interface AuthTokenState {
   token: string | null;
@@ -468,6 +475,14 @@ export interface Leaderboard {
   refreshAfterSeconds: number;
 }
 
+// Where a folder name is already used in the space: a parent's id, or null at the
+// top level. Or a default folder's name, which no subfolder in Private takes.
+export interface FolderNameClash {
+  takenName?: string;
+  takenInFolderId?: number | null;
+  reservedName?: string;
+}
+
 export interface DeviceNoteFolder {
   id: number;
   name: string;
@@ -554,7 +569,8 @@ export interface NoteItem {
   created_at: string;
   updated_at: string;
   client_note_id: string;
-  sync_status: "synced" | "pending" | "error";
+  // folder_link_pending: nothing changed but the folder link still to send.
+  sync_status: "synced" | "pending" | "error" | "folder_link_pending";
   deleted_at: string | null;
   // Computed by getNoteByClientId and getNoteForCloudRow while a parent folder
   // DELETE awaits its server result. Held notes stay hidden and must not be
@@ -602,6 +618,13 @@ export type NotePushSnapshot = Pick<
 
 export type NoteCreateSnapshot = NotePushSnapshot;
 export type NoteUpdateSnapshot = NotePushSnapshot;
+
+// The copy a pulled delete decided from. Must mirror NOTE_PULLED_DELETE_FIELDS
+// in src/helpers/database.js.
+export type NoteDeleteExpectation = Pick<
+  NoteItem,
+  "client_note_id" | "cloud_id" | "sync_status" | "deleted_at" | "updated_at"
+>;
 
 export interface NoteCreateAckResult {
   success: boolean;
@@ -715,12 +738,16 @@ export interface FolderItem {
   is_default: number;
   sort_order: number;
   space_id: number;
+  parent_folder_id: number | null;
   created_at: string;
   updated_at: string;
   client_folder_id: string;
   cloud_id: string | null;
   sync_status: "synced" | "pending" | "error";
   deleted_at: string | null;
+  // The local account that owns a private folder; NULL for team folders and
+  // device-owned ones not yet bound to an account's cloud.
+  account_id?: string | null;
   // 1 while a cloud-backed row that left a team space still owes its scope
   // retraction push (D6); cleared when the row settles.
   left_team?: number;
@@ -733,6 +760,7 @@ export type FolderPushSnapshot = Pick<
   | "is_default"
   | "sort_order"
   | "space_id"
+  | "parent_folder_id"
   | "created_at"
   | "updated_at"
   | "sync_status"
@@ -926,6 +954,10 @@ export interface Workspace {
   role: WorkspaceRole;
   is_billable?: boolean;
   billing_manager?: string | null;
+  // Absent before API release 4.
+  billing_manager_email?: string | null;
+  member_count?: number;
+  invitation_count?: number;
   // Absent on API responses that predate capabilities; read through workspaceCan().
   capabilities?: WorkspaceCapabilities;
   has_subscription?: boolean;
@@ -933,6 +965,8 @@ export interface Workspace {
   is_default: boolean;
   // Some account's default workspace, the caller's or another member's.
   is_account_default: boolean;
+  // Absent on API responses that predate workspace icons.
+  icon_url?: string | null;
 }
 
 export interface OwnedMemberContent {
@@ -1276,6 +1310,11 @@ export interface AudioDiagnosticsResult {
 export type SystemAudioMode = "native" | "loopback" | "portal" | "unsupported";
 export type SystemAudioStrategy =
   "native" | "loopback" | "pipewire-loopback" | "wasapi-loopback" | "unsupported";
+
+// Where a meeting recording started from and why it stopped, for the local audit log.
+export type MeetingStartSource =
+  "hotkey" | "tray" | "pill" | "prompt" | "calendar-join" | "record-button" | "new-note";
+export type MeetingStopReason = "user" | "auto-end" | "policy" | "account-change" | "error";
 
 export interface MeetingSystemAudioInterruption {
   systemAudioStrategy: SystemAudioStrategy;
@@ -1803,6 +1842,7 @@ declare global {
         scope: "transcription" | "reasoning";
         provider: string;
         apiKey?: string;
+        headers?: { name: string; value: string }[];
         baseUrl?: string;
         model?: string;
         clientId?: string;
@@ -1887,7 +1927,11 @@ declare global {
       hideWindow: () => Promise<void>;
       showDictationPanel: () => Promise<void>;
       openSettingsSection?: (
-        section: SettingsTarget | ProviderSettingsTarget | "plansBilling"
+        section:
+          | SettingsTarget
+          | ProviderSettingsTarget
+          | "plansBilling"
+          | `plansBilling:workspace:${string}`
       ) => Promise<{ success: boolean }>;
       captureDictationTarget?: () => Promise<{ success: boolean; pid: number | null }>;
       captureDictationAppCategory?: () => Promise<ToneAppCategory>;
@@ -1905,7 +1949,8 @@ declare global {
       micWarmHoldChanged?: (active: boolean) => void;
       dictationLifecycleStateChanged: (
         state: "idle" | "preparing" | "recording" | "processing",
-        attempt: string
+        attempt: string,
+        voiceAgentRequested?: boolean
       ) => Promise<boolean>;
 
       // STT config
@@ -1922,7 +1967,7 @@ declare global {
       >;
 
       // Org policy (see src/types/policy.ts)
-      getEffectivePolicy?: () => Promise<EffectivePolicySnapshot>;
+      getEffectivePolicy?: (options?: { refresh?: boolean }) => Promise<EffectivePolicySnapshot>;
       onEffectivePolicyChanged?: (
         callback: (snapshot: EffectivePolicySnapshot) => void
       ) => () => void;
@@ -2021,6 +2066,8 @@ declare global {
           cohereModel: string;
           whisperModel: string;
           preferredLanguage?: string;
+          translationSourceLanguage?: string;
+          keyterms?: string[];
           transcriptionMode?: InferenceMode;
           remoteTranscriptionType?: SelfHostedType;
           remoteTranscriptionUrl?: string;
@@ -2036,6 +2083,8 @@ declare global {
         success: boolean;
         transcription?: TranscriptionItem;
         warning?: string;
+        // The transcript as the provider rewrote it (AssemblyAI Dictation).
+        cleanedText?: string;
         error?: string;
         code?: string;
         messageKey?: string;
@@ -2178,7 +2227,9 @@ declare global {
       ) => Promise<{ success: boolean; error?: string }>;
       exportTranscript: (
         noteId: number,
-        format: "txt" | "srt" | "json" | "md"
+        format: "txt" | "srt" | "json" | "md",
+        /** recorderLabel names the original recorder when someone else exports the note. */
+        options?: { recorderLabel?: string }
       ) => Promise<{ success: boolean; error?: string }>;
       exportDictionary: (words: string[]) => Promise<{ success: boolean; error?: string }>;
       searchNotes: (
@@ -2225,23 +2276,33 @@ declare global {
       createFolder: (
         name: string,
         spaceId?: number | null,
-        writeGuard?: NoteWriteGuard
-      ) => Promise<{ success: boolean; folder?: FolderItem; error?: string }>;
-      deleteFolder: (id: number) => Promise<{ success: boolean; error?: string }>;
+        writeGuard?: NoteWriteGuard,
+        parentFolderId?: number | null
+      ) => Promise<{ success: boolean; folder?: FolderItem; error?: string } & FolderNameClash>;
+      deleteFolder: (
+        id: number
+      ) => Promise<{ success: boolean; error?: string; noteIds?: number[] }>;
       renameFolder: (
         id: number,
         name: string
-      ) => Promise<{ success: boolean; folder?: FolderItem; error?: string }>;
+      ) => Promise<{ success: boolean; folder?: FolderItem; error?: string } & FolderNameClash>;
       moveFolderToSpace: (
         id: number,
         spaceId: number
-      ) => Promise<{
-        success: boolean;
-        folder?: FolderItem;
-        notes?: NoteItem[];
-        error?: string;
-        code?: MoveRefusalCode;
-      }>;
+      ) => Promise<
+        {
+          success: boolean;
+          folder?: FolderItem;
+          notes?: NoteItem[];
+          error?: string;
+          code?: MoveRefusalCode;
+        } & FolderNameClash
+      >;
+      setFolderParent: (
+        id: number,
+        parentFolderId: number | null,
+        writeGuard?: NoteWriteGuard
+      ) => Promise<{ success: boolean; folder?: FolderItem; error?: string } & FolderNameClash>;
       getFolderNoteCounts: () => Promise<
         Array<{ space_id: number; folder_id: number | null; count: number }>
       >;
@@ -2370,7 +2431,7 @@ declare global {
       noteFilesSetEnabled?: (
         enabled: boolean,
         customPath?: string,
-        options?: { skipRebuild?: boolean }
+        options?: { skipRebuild?: boolean; startup?: boolean }
       ) => Promise<{ success: boolean; error?: string }>;
       noteFilesSetPath?: (path: string) => Promise<{ success: boolean; error?: string }>;
       noteFilesRebuild?: () => Promise<{ success: boolean; error?: string }>;
@@ -2487,7 +2548,10 @@ declare global {
       onNoteDeleted?: (callback: (payload: { id: number }) => void) => () => void;
       onNoteSynced?: (callback: (note: NoteItem) => void) => () => void;
       onFolderSynced?: (callback: (folder: FolderItem) => void) => () => void;
-      onFolderDeleted?: (callback: (payload: { id: number }) => void) => () => void;
+      // noteIds: the notes the delete took with the folder (main's own delete and pulled ones).
+      onFolderDeleted?: (
+        callback: (payload: { id: number; noteIds?: number[] }) => void
+      ) => () => void;
 
       // Cross-window sync events
       emitSyncEvent?: (name: string, payload?: unknown) => Promise<{ success: boolean }>;
@@ -2928,6 +2992,12 @@ declare global {
         language?: string;
         keyterms?: string[];
       }) => Promise<ProxyTranscriptionResult>;
+      proxyElevenlabsTranscription?: (data: {
+        audioBuffer: ArrayBuffer;
+        model?: string;
+        language?: string;
+        keyterms?: string[];
+      }) => Promise<ProxyTranscriptionResult<{ acceptedKeyterms: string[] }>>;
 
       // Groq API key management
       getGroqKey: () => Promise<string | null>;
@@ -2979,8 +3049,19 @@ declare global {
       saveDeepgramKey?: (key: string) => Promise<void>;
       getAssemblyAIKey?: () => Promise<string | null>;
       saveAssemblyAIKey?: (key: string) => Promise<void>;
+      proxyAssemblyAiTranscription?: (data: {
+        audioBuffer: ArrayBuffer;
+        mimeType?: string;
+        durationSeconds?: number | null;
+        language?: string;
+        keyterms?: string[];
+      }) => Promise<ProxyTranscriptionResult & { cleanedText?: string }>;
+      getElevenlabsKey?: () => Promise<string | null>;
+      saveElevenlabsKey?: (key: string) => Promise<void>;
 
       // Custom endpoint API keys
+      getSelfHostedSttHeaders?: () => Promise<string | null>;
+      saveSelfHostedSttHeaders?: (value: string) => Promise<void>;
       getCustomTranscriptionKey?: () => Promise<string | null>;
       saveCustomTranscriptionKey?: (key: string) => Promise<void>;
       getCleanupCustomKey?: () => Promise<string | null>;
@@ -3339,7 +3420,7 @@ declare global {
         error?: string;
         code?: string;
       }>;
-      cloudBillingPortal?: () => Promise<{
+      cloudBillingPortal?: (expectedAuthGeneration?: number) => Promise<{
         success: boolean;
         url?: string;
         error?: string;
@@ -3425,6 +3506,7 @@ declare global {
       // BYOK audio file transcription
       transcribeAudioFileByok?: (options: {
         filePath: string;
+        durationSeconds?: number;
         requestId?: string;
         purpose?: "dictation" | "upload";
         diarize?: boolean;
@@ -3846,7 +3928,11 @@ declare global {
       connectorNoteAttendees?: (
         request: NoteAttendeesRequest
       ) => Promise<{ attendees: NoteAttendee[]; unavailableReason?: string }>;
-      connectorConnect?: (connectorId: string) => Promise<ConnectorConnectResult>;
+      /** `loginDomain`: Salesforce's sandbox or My Domain sign-in host, when not the default. */
+      connectorConnect?: (
+        connectorId: string,
+        options?: { loginDomain?: string }
+      ) => Promise<ConnectorConnectResult>;
       /**
        * Stops this connector's connect in progress, whichever account started it
        * (including one still waiting on policy); the connect ends as oauth_cancelled.
@@ -3916,6 +4002,7 @@ declare global {
         autoEndEligible: boolean;
         aecEnabled?: boolean;
         speakerIndexBase?: number;
+        startSource?: MeetingStartSource;
       }) => Promise<
         {
           success: boolean;
@@ -3928,6 +4015,11 @@ declare global {
         } & PolicyFailureMetadata
       >;
       isMeetingRecordingDisabled?: () => Promise<boolean>;
+      meetingRecordingRefused?: (details: {
+        noteId: number | null;
+        startSource?: MeetingStartSource;
+        reason: string;
+      }) => Promise<void>;
       meetingTranscriptionSend?: (
         buffer: ArrayBuffer,
         source: "mic" | "system",
@@ -3937,7 +4029,14 @@ declare global {
         sessionId: string,
         available: boolean
       ) => Promise<{ success: boolean; reason?: "stale-session" }>;
-      meetingTranscriptionStop?: (expectedSessionId?: string) => Promise<{
+      meetingTranscriptionSetMicMuted?: (
+        sessionId: string,
+        muted: boolean
+      ) => Promise<{ success: boolean; reason?: "stale-session" }>;
+      meetingTranscriptionStop?: (
+        expectedSessionId?: string,
+        reason?: MeetingStopReason
+      ) => Promise<{
         success: boolean;
         transcript?: string;
         diarizationSessionId?: string;
@@ -4237,6 +4336,7 @@ declare global {
         folderId: number | null;
         event: any;
         trigger?: "hotkey" | "manual" | "calendar-join";
+        startSource?: MeetingStartSource;
       } | null>;
       onMeetingNoteNavigationPending?: (callback: () => void) => () => void;
       meetingNoteOpenedWithoutRecording?: (noteSessionId: string) => Promise<void>;
@@ -4350,11 +4450,23 @@ declare global {
       countTeamNotesMissingOwner?: () => Promise<number>;
       countNotesMissingRevision?: (scope?: "private" | "team" | null) => Promise<number>;
       markNoteSyncError?: (id: number) => Promise<void>;
-      restoreNoteAfterDeniedDelete?: (id: number) => Promise<{ success: boolean; id: number }>;
+      keepDeletedNoteTranscript?: (
+        id: number,
+        transcript: string,
+        writeGuard: NoteWriteGuard
+      ) => Promise<{ success: boolean; id?: number; code?: "note_live"; error?: string }>;
+      restoreNoteAfterDeniedDelete?: (
+        id: number
+      ) => Promise<{ success: boolean; id: number; pending?: boolean }>;
+      // A pulled delete passes the copy it decided from: a row written since
+      // stays (code "note_changed") for the pull to decide again.
       hardDeleteNote?: (
         id: number,
-        expectedAuthGeneration?: number
-      ) => Promise<{ success: boolean; id: number } | StaleSyncWrite>;
+        expectedAuthGeneration?: number,
+        options?: { expected?: NoteDeleteExpectation }
+      ) => Promise<
+        { success: boolean; id: number; code?: "note_changed"; error?: string } | StaleSyncWrite
+      >;
 
       // An omitted scope includes personal folders for consented Backup.
       getPendingFolders?: (scope?: "private" | "team" | null) => Promise<FolderItem[]>;
@@ -4384,21 +4496,47 @@ declare global {
         expectedCloudId: string,
         expectedAuthGeneration?: number
       ) => Promise<FolderAckResult | StaleSyncWrite>;
+      ensureAccountDefaultFolders?: (
+        foreignCloudIds: string[],
+        expectedScope: ActiveAccountScope
+      ) => Promise<void>;
       getFolderIdMap?: () => Promise<FolderItem[]>;
+      applyCloudFolderParents?: (
+        links: Array<{
+          cloudId: string;
+          parentCloudId: string | null;
+          snapshot: FolderPushSnapshot;
+          adoptIfPending?: boolean;
+        }>,
+        expectedAuthGeneration?: number
+      ) => Promise<void | StaleSyncWrite>;
       getPendingFolderDeletes?: () => Promise<FolderItem[]>;
       restoreFolderAfterDeniedDelete?: (id: number) => Promise<{
         success: boolean;
         id: number;
         folder?: FolderItem;
         notes?: NoteItem[];
+        subfolders?: FolderItem[];
         conversationIds?: number[];
         reason?: "name-taken";
         error?: string;
       }>;
       hardDeleteFolder?: (
         id: number,
-        expectedAuthGeneration?: number
-      ) => Promise<{ success: boolean; id: number } | StaleSyncWrite>;
+        expectedAuthGeneration?: number,
+        options?: { preserveDirtyNotes?: boolean }
+      ) => Promise<
+        | {
+            success: boolean;
+            id: number;
+            noteIds?: number[];
+            relocatedNotes?: NoteItem[];
+            preservedNotes?: NoteItem[];
+            unfiledNotes?: NoteItem[];
+            error?: string;
+          }
+        | StaleSyncWrite
+      >;
       // A new client identity and no cloud link: the folder's cloud row is
       // left to whoever still has it.
       forkFolderIdentity?: (id: number) => Promise<{ success: boolean }>;
@@ -4432,6 +4570,14 @@ declare global {
         id: number,
         expectedAuthGeneration: number
       ) => Promise<{ success: boolean; stale?: boolean }>;
+      /** Queues a linked chat whose cloud copy is missing messages for the next push. */
+      markConversationPending?: (
+        id: number,
+        expectedAuthGeneration: number
+      ) => Promise<{ success: boolean; stale?: boolean }>;
+      getSyncedLinkedConversations?: (
+        expectedAuthGeneration: number
+      ) => Promise<Array<{ id: number; cloud_id: string }> | StaleSyncWrite>;
       clearConversationCreateAttempted?: (id: number) => Promise<void>;
       acknowledgeConversationCreate?: (
         id: number,
@@ -4599,6 +4745,32 @@ declare global {
         expectedAuthGeneration: number
       ) => Promise<{ success: boolean } | StaleSyncWrite>;
       broadcastSnippetsUpdated?: () => Promise<{ success: boolean }>;
+
+      getPendingSkills?: () => Promise<SkillSyncRow[]>;
+      getPendingSkillDeletes?: () => Promise<SkillSyncRow[]>;
+      exportSkillForCloud?: (name: string) => Promise<SkillCloudExport>;
+      getSkillForCloudMerge?: (
+        cloudEntry: CloudSkillMeta
+      ) => Promise<SkillSyncRow | null | SkillSyncUnavailable>;
+      /** False when the entry was skipped for good; a failed write answers why. */
+      applySkillFromCloud?: (
+        cloudEntry: CloudSkillEntry,
+        expectedLocal: SkillSyncRow | null
+      ) => Promise<boolean | { ok: false; error: SkillWriteError }>;
+      markSkillSynced?: (
+        name: string,
+        cloudId: string,
+        serverUpdatedAt: string | undefined,
+        expectedHash: string,
+        expectedEnabled: boolean
+      ) => Promise<{ success: boolean; changes: number } | null>;
+      hardDeleteSkill?: (name: string) => Promise<{ success: boolean } | null>;
+      queueSkillCloudDelete?: (
+        name: string,
+        cloudId: string
+      ) => Promise<{ success: boolean } | null>;
+      clearSkillCloudId?: (name: string) => Promise<{ success: boolean } | null>;
+      broadcastSkillsUpdated?: () => Promise<void>;
     };
 
     api?: {

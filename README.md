@@ -6,7 +6,7 @@
 
 > WhisprLocal is an independent derivative. It is **not affiliated with, endorsed by, or operated by OpenWhispr, Gizmo Labs, or OpenAI**. Whisper is a model originally released by OpenAI; using it does not imply any affiliation.
 
-Project version **0.2.0** is based on **OpenWhispr 1.12.0**. The upstream tag and commit are tracked in [`upstream.json`](upstream.json).
+Project version **0.3.0** is based on **OpenWhispr 1.12.2**. The upstream tag and commit are tracked in [`upstream.json`](upstream.json).
 
 ## What stays familiar
 

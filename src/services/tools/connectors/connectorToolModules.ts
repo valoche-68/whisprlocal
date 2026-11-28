@@ -3,10 +3,6 @@ import type { EmailDraftTarget } from "../../../utils/emailDraftTarget";
 import type { ConnectionTarget } from "../../../types/agentInteractions";
 import { isConnectorReady } from "../../../stores/connectorStatusStore";
 import { requireConnection } from "../interactionTools";
-import { emailToolModule } from "./emailDraftTool";
-import { linearToolModule } from "./linearTools";
-import { slackToolModule } from "./slackSendMessageTool";
-import { githubToolModule } from "./githubTools";
 
 /** What a module may need to build its tools for this send. */
 export interface ConnectorToolEnv {
@@ -15,6 +11,7 @@ export interface ConnectorToolEnv {
   currentEmailDraftTarget?: () => EmailDraftTarget;
   /** The chat can ask the user on a card (it offers interactions). */
   asksUser?: boolean;
+  readNote?: ToolDefinition["execute"];
 }
 
 /** One connector's tools. Each connector's own file exports its module. */
@@ -32,24 +29,20 @@ export interface ConnectorToolSettings extends ConnectorToolEnv {
   connectableConnectorIds?: readonly ConnectionTarget[];
 }
 
-/** Every connector's tools, in the order the model sees them. New connectors append here. */
-export const CONNECTOR_TOOL_MODULES: readonly ConnectorToolModule[] = [
-  emailToolModule,
-  slackToolModule,
-  linearToolModule,
-  githubToolModule,
-];
+/** Third-party connector modules are disabled in WhisprLocal. */
+export const CONNECTOR_TOOL_MODULES: readonly ConnectorToolModule[] = [];
 
 export function registerConnectorTools(
   registry: ToolRegistry,
   settings: ConnectorToolSettings,
   modules: readonly ConnectorToolModule[] = CONNECTOR_TOOL_MODULES
 ): void {
-  const { emailDraftTarget, currentEmailDraftTarget, asksUser } = settings;
+  const { emailDraftTarget, currentEmailDraftTarget, asksUser, readNote } = settings;
   const env: ConnectorToolEnv = {
     emailDraftTarget,
     ...(currentEmailDraftTarget ? { currentEmailDraftTarget } : {}),
     ...(asksUser ? { asksUser } : {}),
+    ...(readNote ? { readNote } : {}),
   };
   for (const toolModule of modules) {
     const { connectorId } = toolModule;
